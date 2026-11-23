@@ -1,0 +1,2337 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-950 text-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Psychrometric Chart & HVAC Process Plotter</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Font Awesome Icons CDN -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <!-- jsPDF Library CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* Custom Scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+
+    .canvas-container {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      min-height: 520px;
+    }
+
+    /* Clean numeric inputs */
+    input[type=number]::-webkit-inner-spin-button, 
+    input[type=number]::-webkit-outer-spin-button { 
+      opacity: 1;
+    }
+
+    /* Print styles fallback */
+    @media print {
+      body { background: white !important; color: black !important; }
+      header, .no-print { display: none !important; }
+      .print-only { display: block !important; }
+      .bg-slate-900, .bg-slate-950 { background: white !important; border-color: #ccc !important; color: black !important; }
+      canvas { max-width: 100% !important; border: 1px solid #999 !important; }
+    }
+  </style>
+</head>
+<body class="h-full flex flex-col font-sans overflow-x-hidden antialiased select-none bg-slate-950 text-slate-100">
+
+  <!-- Top Navigation Header -->
+  <header class="bg-slate-900 border-b border-slate-800 px-4 py-3 shrink-0">
+    <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
+      <div class="flex items-center space-x-3">
+        <div class="p-2.5 bg-sky-500/10 border border-sky-500/30 rounded-xl text-sky-400">
+          <i class="fa-solid fa-chart-area text-xl"></i>
+        </div>
+        <div>
+          <h1 class="font-bold text-lg text-white leading-tight flex items-center gap-2">
+            Psychrometric Process & Exchanger Analyzer
+            <span class="text-xs font-normal px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-sky-400">ASHRAE 101.325 kPa</span>
+          </h1>
+          <p class="text-xs text-slate-400">Interactive Psychrometric Plotter & CSV Heat Exchanger Performance Engine</p>
+        </div>
+      </div>
+
+      <!-- Workspace Navigation Tabs & Global Tools -->
+      <div class="flex flex-wrap items-center gap-2 text-xs">
+        <!-- View Tabs -->
+        <div class="flex items-center bg-slate-950 border border-slate-800 rounded-lg p-1">
+          <button id="tab-btn-chart" onclick="switchTab('chart')" class="px-3 py-1.5 rounded-md font-medium transition bg-sky-600 text-white shadow">
+            <i class="fa-solid fa-chart-line mr-1"></i> Interactive Chart
+          </button>
+          <button id="tab-btn-csv" onclick="switchTab('csv')" class="px-3 py-1.5 rounded-md font-medium transition text-slate-400 hover:text-slate-200">
+            <i class="fa-solid fa-file-csv mr-1"></i> CSV Batch Exchanger
+          </button>
+        </div>
+
+        <!-- HVAC Presets -->
+        <div class="hidden lg:flex items-center bg-slate-950 border border-slate-800 rounded-lg p-1">
+          <span class="text-slate-400 px-2 font-medium">Presets:</span>
+          <button onclick="loadPreset('summer')" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 transition">Summer AC</button>
+          <button onclick="loadPreset('winter')" class="px-2.5 py-1 rounded hover:bg-slate-800 text-slate-300 transition">Winter Heat</button>
+          <button onclick="loadPreset('evap')" class="px-2.5 py-1 rounded hover:bg-slate-800 text-slate-300 transition">Evap Cooling</button>
+        </div>
+
+        <button onclick="resetDefaults()" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition flex items-center gap-1.5">
+          <i class="fa-solid fa-rotate-left"></i> Reset
+        </button>
+        <button onclick="exportChartPNG()" class="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-semibold transition shadow-lg shadow-sky-600/20 flex items-center gap-1.5">
+          <i class="fa-solid fa-download"></i> Export Chart
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Work Area -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-4 flex flex-col gap-4">
+
+    <!-- VIEW TAB 1: INTERACTIVE PSYCHROMETRIC CHART & PROCESS PLOTTER -->
+    <div id="view-chart" class="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+      
+      <!-- LEFT COLUMN: State Points & Process Selection Controls -->
+      <div class="lg:col-span-4 flex flex-col gap-4">
+
+        <!-- State Points Inputs (Up to 4 Points) -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-xl">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-2.5 mb-3">
+            <h2 class="font-semibold text-slate-100 flex items-center gap-2">
+              <i class="fa-solid fa-location-crosshairs text-sky-400"></i> State Points (Up to 4)
+            </h2>
+            <span class="text-[11px] text-slate-400">Numeric Entry Only</span>
+          </div>
+
+          <!-- Dynamic Point Rows -->
+          <div class="space-y-2.5" id="points-container">
+            <!-- Rendered by JS -->
+          </div>
+        </div>
+
+        <!-- Process Configurator Card -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-xl">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-2.5 mb-3">
+            <h2 class="font-semibold text-slate-100 flex items-center gap-2">
+              <i class="fa-solid fa-route text-amber-400"></i> Process Connections
+            </h2>
+            <button onclick="addNewProcess()" class="text-xs bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 text-sky-400 px-2.5 py-1 rounded-md transition flex items-center gap-1">
+              <i class="fa-solid fa-plus"></i> Add Process
+            </button>
+          </div>
+
+          <!-- Dynamic Process Rows -->
+          <div class="space-y-2.5" id="processes-container">
+            <!-- Rendered by JS -->
+          </div>
+
+          <div class="mt-3 pt-2.5 border-t border-slate-800 flex flex-wrap gap-1.5">
+            <span class="text-[11px] text-slate-400 w-full mb-0.5">Quick Connection Shortcuts:</span>
+            <button onclick="quickAddProcess(1,2)" class="text-xs px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded font-mono">1 → 2</button>
+            <button onclick="quickAddProcess(1,3)" class="text-xs px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded font-mono">1 → 3</button>
+            <button onclick="quickAddProcess(1,4)" class="text-xs px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded font-mono">1 → 4</button>
+            <button onclick="quickAddProcess(2,3)" class="text-xs px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded font-mono">2 → 3</button>
+            <button onclick="quickAddProcess(2,4)" class="text-xs px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded font-mono">2 → 4</button>
+            <button onclick="quickAddProcess(3,4)" class="text-xs px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded font-mono">3 → 4</button>
+            <button onclick="clearProcesses()" class="text-xs px-2.5 py-1 bg-rose-950/40 hover:bg-rose-900/50 text-rose-300 border border-rose-800/50 rounded ml-auto">Clear All</button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- RIGHT COLUMN: Psychrometric Canvas & Calculation Tables -->
+      <div class="lg:col-span-8 flex flex-col gap-4">
+
+        <!-- Live Cursor Crosshair Parameter Readout -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3 text-xs shadow-md" id="hover-readout">
+          <div class="flex items-center gap-2 text-slate-400 font-medium">
+            <i class="fa-solid fa-crosshairs text-sky-400 animate-pulse"></i>
+            <span>Cursor Location:</span>
+          </div>
+          <div class="flex flex-wrap gap-x-4 gap-y-1 font-mono text-slate-200" id="hover-values">
+            <span>DBT: <strong class="text-sky-400" id="hv-dbt">--</strong> °C</span>
+            <span>RH: <strong class="text-teal-400" id="hv-rh">--</strong> %</span>
+            <span>w: <strong class="text-emerald-400" id="hv-w">--</strong> g/kg</span>
+            <span>WBT: <strong class="text-amber-400" id="hv-wbt">--</strong> °C</span>
+            <span>DPT: <strong class="text-indigo-400" id="hv-dpt">--</strong> °C</span>
+            <span>h: <strong class="text-purple-400" id="hv-h">--</strong> kJ/kg</span>
+            <span>v: <strong class="text-orange-400" id="hv-v">--</strong> m³/kg</span>
+          </div>
+        </div>
+
+        <!-- Chart Canvas & Layer Visibility -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 sm:p-4 shadow-xl flex flex-col gap-3">
+          <!-- Layer Toggles -->
+          <div class="flex flex-wrap items-center justify-between gap-2 text-xs border-b border-slate-800 pb-2.5">
+            <div class="flex flex-wrap items-center gap-3 text-slate-300 font-medium">
+              <span class="text-slate-400 mr-1">Visible Layers:</span>
+              <label class="flex items-center gap-1.5 cursor-pointer">
+                <input type="checkbox" id="toggle-rh" checked onchange="drawChart()" class="rounded bg-slate-800 border-slate-700 text-sky-500 focus:ring-0">
+                <span class="w-3 h-1 bg-sky-500 rounded inline-block"></span> RH Curves
+              </label>
+              <label class="flex items-center gap-1.5 cursor-pointer">
+                <input type="checkbox" id="toggle-wbt" checked onchange="drawChart()" class="rounded bg-slate-800 border-slate-700 text-emerald-600 focus:ring-0">
+                <span class="w-3 h-1 border-b-2 border-dashed border-emerald-600 inline-block"></span> WBT Lines
+              </label>
+              <label class="flex items-center gap-1.5 cursor-pointer">
+                <input type="checkbox" id="toggle-enthalpy" checked onchange="drawChart()" class="rounded bg-slate-800 border-slate-700 text-purple-600 focus:ring-0">
+                <span class="w-3 h-1 bg-purple-600 rounded inline-block"></span> Enthalpy
+              </label>
+              <label class="flex items-center gap-1.5 cursor-pointer">
+                <input type="checkbox" id="toggle-volume" checked onchange="drawChart()" class="rounded bg-slate-800 border-slate-700 text-amber-600 focus:ring-0">
+                <span class="w-3 h-1 bg-amber-600 rounded inline-block"></span> Volume
+              </label>
+            </div>
+            <div class="text-[11px] text-slate-400 italic">Click chart canvas to position targeted point</div>
+          </div>
+
+          <!-- Canvas Frame -->
+          <div class="canvas-container bg-slate-950 border border-slate-800 rounded-lg overflow-hidden">
+            <canvas id="psychChart" class="w-full h-full block cursor-crosshair"></canvas>
+          </div>
+        </div>
+
+        <!-- State Points Calculated Summary Table -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-xl overflow-x-auto">
+          <h3 class="font-semibold text-sm text-slate-100 mb-3 flex items-center gap-2">
+            <i class="fa-solid fa-table text-sky-400"></i> Active State Points Properties Summary
+          </h3>
+          <table class="w-full text-left text-xs font-mono">
+            <thead>
+              <tr class="border-b border-slate-800 text-slate-400 font-sans">
+                <th class="pb-2 font-medium">Point</th>
+                <th class="pb-2 font-medium">Label / Role</th>
+                <th class="pb-2 font-medium">DBT (°C)</th>
+                <th class="pb-2 font-medium">RH (%)</th>
+                <th class="pb-2 font-medium">w (g/kg)</th>
+                <th class="pb-2 font-medium">WBT (°C)</th>
+                <th class="pb-2 font-medium">DPT (°C)</th>
+                <th class="pb-2 font-medium">Enthalpy h (kJ/kg)</th>
+                <th class="pb-2 font-medium">Vol v (m³/kg)</th>
+              </tr>
+            </thead>
+            <tbody id="points-table-body" class="divide-y divide-slate-800/60 text-slate-200">
+              <!-- Rendered by JS -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Process Energy & Path Summary Table -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-xl overflow-x-auto">
+          <h3 class="font-semibold text-sm text-slate-100 mb-3 flex items-center gap-2">
+            <i class="fa-solid fa-diagram-project text-amber-400"></i> Process Analysis & Energy Metrics
+          </h3>
+          <table class="w-full text-left text-xs">
+            <thead>
+              <tr class="border-b border-slate-800 text-slate-400 font-sans">
+                <th class="pb-2 font-medium">Process</th>
+                <th class="pb-2 font-medium">Vector Path</th>
+                <th class="pb-2 font-medium">Classified HVAC Process Type</th>
+                <th class="pb-2 font-medium font-mono">ΔDBT (°C)</th>
+                <th class="pb-2 font-medium font-mono">Δw (g/kg)</th>
+                <th class="pb-2 font-medium font-mono">Δh (kJ/kg)</th>
+              </tr>
+            </thead>
+            <tbody id="processes-table-body" class="divide-y divide-slate-800/60 font-mono text-slate-200">
+              <!-- Rendered by JS -->
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- VIEW TAB 2: CSV BATCH ANALYSIS & HEAT/MASS EXCHANGER CALCULATOR -->
+    <div id="view-csv" class="hidden flex flex-col gap-4">
+      
+      <!-- CSV Upload Controls & Data Source Header -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-xl">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4 mb-4">
+          <div>
+            <h2 class="font-bold text-base text-white flex items-center gap-2">
+              <i class="fa-solid fa-file-csv text-teal-400 text-lg"></i>
+              CSV Batch Analysis & Heat/Mass Exchanger Performance
+            </h2>
+            <p class="text-xs text-slate-400 mt-0.5">
+              Upload multi-point experimental or simulation data to calculate WBT, Specific Enthalpy ($h$), Heat Duty ($Q$), Wet Bulb Effectiveness ($\varepsilon_{wb}$), and Dew Point Effectiveness ($\varepsilon_{dp}$).
+            </p>
+          </div>
+          
+          <div class="flex flex-wrap items-center gap-2 shrink-0">
+            <button onclick="downloadSampleCSV()" class="px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-sky-400 border border-slate-700 text-xs font-semibold transition flex items-center gap-2">
+              <i class="fa-solid fa-file-arrow-down text-sm"></i> Download Sample CSV
+            </button>
+            <button onclick="loadDemoDataset()" class="px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 text-xs font-semibold transition flex items-center gap-2">
+              <i class="fa-solid fa-bolt text-sm"></i> Reload Demo Data
+            </button>
+            <button id="btn-export-csv" onclick="exportResultsCSV()" class="px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-600 text-white text-xs font-semibold transition shadow-lg flex items-center gap-2">
+              <i class="fa-solid fa-download text-sm"></i> Download Results CSV
+            </button>
+            <button id="btn-export-pdf" onclick="generatePDFReport()" class="px-3.5 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 disabled:bg-slate-800 disabled:text-slate-600 text-white text-xs font-semibold transition shadow-lg flex items-center gap-2">
+              <i class="fa-solid fa-file-pdf text-sm"></i> Download PDF Report
+            </button>
+          </div>
+        </div>
+
+        <!-- Drag & Drop Dropzone -->
+        <div id="dropzone" onclick="document.getElementById('csv-file-input').click()" class="border-2 border-dashed border-slate-700 hover:border-sky-500/80 bg-slate-950/60 hover:bg-slate-950/90 rounded-xl p-5 text-center cursor-pointer transition flex flex-col items-center justify-center gap-2">
+          <i class="fa-solid fa-cloud-arrow-up text-3xl text-sky-400"></i>
+          <span class="text-sm font-semibold text-slate-200">Click to upload CSV or drag and drop file here</span>
+          <span class="text-xs text-slate-500">Supported columns: Time (optional), Primary Inlet/Outlet DBT, RH, Mass Flow, Secondary Inlet/Outlet DBT, RH, Mass Flow</span>
+          <input type="file" id="csv-file-input" accept=".csv" onchange="handleCSVFileSelect(event)" class="hidden">
+        </div>
+
+        <!-- Formulas Reference Footer -->
+        <div class="mt-4 p-3 bg-slate-950/80 border border-slate-800/80 rounded-lg text-xs text-slate-400 flex flex-wrap justify-between gap-3">
+          <div>
+            <strong class="text-slate-200">Wet Bulb Effectiveness (&epsilon;<sub>wb</sub>):</strong>
+            <code class="text-sky-300 font-mono ml-1">(DBT_p_in - DBT_p_out) / (DBT_p_in - WBT_s_in) &times; 100%</code>
+          </div>
+          <div>
+            <strong class="text-slate-200">Dew Point Effectiveness (&epsilon;<sub>dp</sub>):</strong>
+            <code class="text-teal-300 font-mono ml-1">(DBT_p_in - DBT_p_out) / (DBT_p_in - DPT_s_in) &times; 100%</code>
+          </div>
+          <div>
+            <strong class="text-slate-200">Heat Rate (Q):</strong>
+            <code class="text-purple-300 font-mono ml-1">m_dot &times; |h_in - h_out| (kW)</code>
+          </div>
+        </div>
+      </div>
+
+      <!-- Executive KPI Summary Dashboard Cards (Calculated Averages) -->
+      <div id="csv-kpi-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <!-- KPI 1: Wet Bulb Effectiveness -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-xl flex flex-col justify-between">
+          <div class="flex items-center justify-between text-slate-400 mb-2">
+            <span class="text-xs font-medium uppercase tracking-wider">Avg Wet Bulb Eff.</span>
+            <div class="p-2 bg-sky-500/10 border border-sky-500/30 rounded-lg text-sky-400">
+              <i class="fa-solid fa-droplet text-sm"></i>
+            </div>
+          </div>
+          <div class="flex items-baseline gap-1 mb-1">
+            <span id="kpi-avg-eff-wb" class="text-2xl font-bold font-mono text-sky-400">0.0%</span>
+          </div>
+          <p class="text-[11px] text-slate-400">Primary cooling relative to secondary inlet WBT</p>
+        </div>
+
+        <!-- KPI 2: Dew Point Effectiveness -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-xl flex flex-col justify-between">
+          <div class="flex items-center justify-between text-slate-400 mb-2">
+            <span class="text-xs font-medium uppercase tracking-wider">Avg Dew Point Eff.</span>
+            <div class="p-2 bg-teal-500/10 border border-teal-500/30 rounded-lg text-teal-400">
+              <i class="fa-solid fa-snowflake text-sm"></i>
+            </div>
+          </div>
+          <div class="flex items-baseline gap-1 mb-1">
+            <span id="kpi-avg-eff-dp" class="text-2xl font-bold font-mono text-teal-400">0.0%</span>
+          </div>
+          <p class="text-[11px] text-slate-400">Primary cooling relative to secondary inlet DPT</p>
+        </div>
+
+        <!-- KPI 3: Heat Duty Rates & Energy Ratio -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-xl flex flex-col justify-between">
+          <div class="flex items-center justify-between text-slate-400 mb-2">
+            <span class="text-xs font-medium uppercase tracking-wider">Avg Heat Duties (Q)</span>
+            <div class="p-2 bg-purple-500/10 border border-purple-500/30 rounded-lg text-purple-400">
+              <i class="fa-solid fa-bolt text-sm"></i>
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-2 text-xs font-mono my-0.5">
+            <div>
+              <span class="text-[10px] text-slate-400 block">Q_primary</span>
+              <strong id="kpi-avg-qp" class="text-purple-300 text-sm">0.00 kW</strong>
+            </div>
+            <div>
+              <span class="text-[10px] text-slate-400 block">Q_secondary</span>
+              <strong id="kpi-avg-qs" class="text-purple-300 text-sm">0.00 kW</strong>
+            </div>
+          </div>
+          <div class="mt-1 flex items-center justify-between text-[11px] border-t border-slate-800 pt-1 text-slate-400">
+            <span>Thermal Ratio (Q_s/Q_p):</span>
+            <span id="kpi-thermal-ratio" class="font-mono font-bold text-amber-400">100.0%</span>
+          </div>
+        </div>
+
+        <!-- KPI 4: Stream Condition Deltas -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-xl flex flex-col justify-between">
+          <div class="flex items-center justify-between text-slate-400 mb-2">
+            <span class="text-xs font-medium uppercase tracking-wider">Avg Stream Temps</span>
+            <div class="p-2 bg-amber-500/10 border border-amber-500/30 rounded-lg text-amber-400">
+              <i class="fa-solid fa-temperature-half text-sm"></i>
+            </div>
+          </div>
+          <div class="space-y-1 text-[11px] font-mono">
+            <div class="flex justify-between">
+              <span class="text-slate-400">Primary:</span>
+              <span id="kpi-pri-t" class="text-sky-300 font-bold">--°C → --°C</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-slate-400">Secondary:</span>
+              <span id="kpi-sec-t" class="text-emerald-300 font-bold">--°C → --°C</span>
+            </div>
+            <div class="flex justify-between border-t border-slate-800 pt-1">
+              <span class="text-slate-400">Avg Δh_pri:</span>
+              <span id="kpi-pri-dh" class="text-purple-400 font-bold">-- kJ/kg</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- INTERACTIVE CUSTOM TREND GRAPH BUILDER -->
+      <div id="custom-graph-card" class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-xl flex flex-col gap-4">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+          <div class="flex items-center gap-2">
+            <div class="p-2 bg-sky-500/10 border border-sky-500/30 rounded-lg text-sky-400">
+              <i class="fa-solid fa-chart-line text-base"></i>
+            </div>
+            <div>
+              <h3 class="font-bold text-sm text-white">Interactive Custom Trend Plotter</h3>
+              <p class="text-xs text-slate-400">Plot time-series trends or multi-variable relationships across your dataset</p>
+            </div>
+          </div>
+
+          <!-- Shortcuts -->
+          <div class="flex flex-wrap items-center gap-1.5 text-xs">
+            <span class="text-slate-400 font-medium mr-1">Presets:</span>
+            <button onclick="applyGraphPreset('eff')" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-sky-300 rounded border border-slate-700 transition">Effectiveness vs Time</button>
+            <button onclick="applyGraphPreset('duties')" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-purple-300 rounded border border-slate-700 transition">Heat Duties vs Time</button>
+            <button onclick="applyGraphPreset('temps')" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-amber-300 rounded border border-slate-700 transition">Temps vs Time</button>
+            <button onclick="applyGraphPreset('h')" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-teal-300 rounded border border-slate-700 transition">Enthalpies vs Time</button>
+            <button onclick="exportCustomGraphPNG()" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded border border-slate-700 transition ml-2">
+              <i class="fa-solid fa-image"></i> Export Graph
+            </button>
+          </div>
+        </div>
+
+        <!-- Axis & Parameter Checkboxes -->
+        <div class="grid grid-cols-1 md:grid-cols-12 gap-3 text-xs bg-slate-950 p-3 rounded-lg border border-slate-800">
+          <!-- X Axis Selection -->
+          <div class="md:col-span-3 flex flex-col gap-1">
+            <label class="font-semibold text-slate-300">X-Axis Variable:</label>
+            <select id="graph-x-select" onchange="renderCustomGraph()" class="bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-slate-200 focus:border-sky-500 font-mono">
+              <option value="time" selected>Time / Sample Index</option>
+              <option value="p_dbt_in">Primary Inlet DBT (°C)</option>
+              <option value="p_m">Primary Mass Flow (kg/s)</option>
+              <option value="s_m">Secondary Mass Flow (kg/s)</option>
+            </select>
+          </div>
+
+          <!-- Y Axis Series Checkboxes -->
+          <div class="md:col-span-9 flex flex-col gap-1">
+            <label class="font-semibold text-slate-300">Y-Axis Series (Select Multiple):</label>
+            <div class="flex flex-wrap gap-2 text-slate-300" id="graph-y-checkboxes">
+              <label class="flex items-center gap-1.5 bg-slate-900 px-2 py-1 rounded border border-slate-800 cursor-pointer">
+                <input type="checkbox" value="eff_wb" checked onchange="renderCustomGraph()" class="rounded text-sky-500">
+                <span class="w-2.5 h-2.5 rounded-full bg-sky-400"></span> ε_wb (%)
+              </label>
+              <label class="flex items-center gap-1.5 bg-slate-900 px-2 py-1 rounded border border-slate-800 cursor-pointer">
+                <input type="checkbox" value="eff_dp" checked onchange="renderCustomGraph()" class="rounded text-teal-500">
+                <span class="w-2.5 h-2.5 rounded-full bg-teal-400"></span> ε_dp (%)
+              </label>
+              <label class="flex items-center gap-1.5 bg-slate-900 px-2 py-1 rounded border border-slate-800 cursor-pointer">
+                <input type="checkbox" value="Q_p" onchange="renderCustomGraph()" class="rounded text-purple-500">
+                <span class="w-2.5 h-2.5 rounded-full bg-purple-400"></span> Q_p (kW)
+              </label>
+              <label class="flex items-center gap-1.5 bg-slate-900 px-2 py-1 rounded border border-slate-800 cursor-pointer">
+                <input type="checkbox" value="Q_s" onchange="renderCustomGraph()" class="rounded text-pink-500">
+                <span class="w-2.5 h-2.5 rounded-full bg-pink-400"></span> Q_s (kW)
+              </label>
+              <label class="flex items-center gap-1.5 bg-slate-900 px-2 py-1 rounded border border-slate-800 cursor-pointer">
+                <input type="checkbox" value="p_dbt_in" onchange="renderCustomGraph()" class="rounded text-rose-500">
+                <span class="w-2.5 h-2.5 rounded-full bg-rose-400"></span> Pri Inlet T (°C)
+              </label>
+              <label class="flex items-center gap-1.5 bg-slate-900 px-2 py-1 rounded border border-slate-800 cursor-pointer">
+                <input type="checkbox" value="p_dbt_out" onchange="renderCustomGraph()" class="rounded text-amber-500">
+                <span class="w-2.5 h-2.5 rounded-full bg-amber-400"></span> Pri Outlet T (°C)
+              </label>
+              <label class="flex items-center gap-1.5 bg-slate-900 px-2 py-1 rounded border border-slate-800 cursor-pointer">
+                <input type="checkbox" value="s_dbt_in" onchange="renderCustomGraph()" class="rounded text-emerald-500">
+                <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span> Sec Inlet T (°C)
+              </label>
+              <label class="flex items-center gap-1.5 bg-slate-900 px-2 py-1 rounded border border-slate-800 cursor-pointer">
+                <input type="checkbox" value="s_dbt_out" onchange="renderCustomGraph()" class="rounded text-indigo-500">
+                <span class="w-2.5 h-2.5 rounded-full bg-indigo-400"></span> Sec Outlet T (°C)
+              </label>
+              <label class="flex items-center gap-1.5 bg-slate-900 px-2 py-1 rounded border border-slate-800 cursor-pointer">
+                <input type="checkbox" value="p_rh_in" onchange="renderCustomGraph()" class="rounded text-cyan-500">
+                <span class="w-2.5 h-2.5 rounded-full bg-cyan-400"></span> Pri Inlet RH (%)
+              </label>
+              <label class="flex items-center gap-1.5 bg-slate-900 px-2 py-1 rounded border border-slate-800 cursor-pointer">
+                <input type="checkbox" value="p_rh_out" onchange="renderCustomGraph()" class="rounded text-lime-500">
+                <span class="w-2.5 h-2.5 rounded-full bg-lime-400"></span> Pri Outlet RH (%)
+              </label>
+              <label class="flex items-center gap-1.5 bg-slate-900 px-2 py-1 rounded border border-slate-800 cursor-pointer">
+                <input type="checkbox" value="s_rh_in" onchange="renderCustomGraph()" class="rounded text-orange-500">
+                <span class="w-2.5 h-2.5 rounded-full bg-orange-400"></span> Sec Inlet RH (%)
+              </label>
+              <label class="flex items-center gap-1.5 bg-slate-900 px-2 py-1 rounded border border-slate-800 cursor-pointer">
+                <input type="checkbox" value="s_rh_out" onchange="renderCustomGraph()" class="rounded text-fuchsia-500">
+                <span class="w-2.5 h-2.5 rounded-full bg-fuchsia-400"></span> Sec Outlet RH (%)
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Custom Graph Canvas Container -->
+        <div class="relative w-full h-[320px] bg-slate-950 border border-slate-800 rounded-lg overflow-hidden">
+          <canvas id="customGraphCanvas" class="w-full h-full block cursor-crosshair"></canvas>
+        </div>
+      </div>
+
+      <!-- Detailed Batch Calculation Log Table -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-xl overflow-x-auto">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="font-semibold text-sm text-slate-100 flex items-center gap-2">
+            <i class="fa-solid fa-list-check text-sky-400"></i> Detailed Batch Calculation Results & Stream Metrics
+          </h3>
+          <span id="batch-row-count" class="text-xs font-mono text-slate-400">8 Rows Processed</span>
+        </div>
+
+        <table class="w-full text-left text-xs font-mono border-collapse">
+          <thead>
+            <tr class="bg-slate-950 text-slate-400 font-sans border-b border-slate-800">
+              <th class="py-2.5 px-3"># / Time</th>
+              <th class="py-2.5 px-3 border-l border-slate-800 text-sky-400" colspan="4">Primary Air Stream (Inlet & Outlet)</th>
+              <th class="py-2.5 px-3 border-l border-slate-800 text-purple-400" colspan="2">Primary Flow & Heat Rate</th>
+              <th class="py-2.5 px-3 border-l border-slate-800 text-emerald-400" colspan="4">Secondary Air Stream (Inlet & Outlet)</th>
+              <th class="py-2.5 px-3 border-l border-slate-800 text-purple-400" colspan="2">Sec Flow & Heat Rate</th>
+              <th class="py-2.5 px-3 border-l border-slate-800 text-amber-400" colspan="2">Calculated Effectiveness</th>
+              <th class="py-2.5 px-3 border-l border-slate-800 text-center">Chart Action</th>
+            </tr>
+            <tr class="bg-slate-950/80 text-[10px] text-slate-400 border-b border-slate-800 font-sans">
+              <th class="py-1.5 px-3">Row</th>
+              
+              <!-- Primary Stream -->
+              <th class="py-1.5 px-3 border-l border-slate-800">In DBT</th>
+              <th class="py-1.5 px-3">In RH</th>
+              <th class="py-1.5 px-3">In WBT</th>
+              <th class="py-1.5 px-3">In h</th>
+              <th class="py-1.5 px-3 text-sky-300">Out DBT</th>
+              <th class="py-1.5 px-3">Out RH</th>
+              <th class="py-1.5 px-3">Out WBT</th>
+              <th class="py-1.5 px-3">Out h</th>
+              <th class="py-1.5 px-3">m_dot</th>
+              <th class="py-1.5 px-3 text-purple-300">Q_p (kW)</th>
+
+              <!-- Secondary Stream -->
+              <th class="py-1.5 px-3 border-l border-slate-800">In DBT</th>
+              <th class="py-1.5 px-3">In RH</th>
+              <th class="py-1.5 px-3">In WBT</th>
+              <th class="py-1.5 px-3">In h</th>
+              <th class="py-1.5 px-3 text-emerald-300">Out DBT</th>
+              <th class="py-1.5 px-3">Out RH</th>
+              <th class="py-1.5 px-3">Out WBT</th>
+              <th class="py-1.5 px-3">Out h</th>
+              <th class="py-1.5 px-3">m_dot</th>
+              <th class="py-1.5 px-3 text-purple-300">Q_s (kW)</th>
+
+              <!-- Effectiveness -->
+              <th class="py-1.5 px-3 border-l border-slate-800 text-sky-300">&epsilon;_wb (%)</th>
+              <th class="py-1.5 px-3 text-teal-300">&epsilon;_dp (%)</th>
+
+              <!-- Action -->
+              <th class="py-1.5 px-3 border-l border-slate-800 text-center">Plot Row</th>
+            </tr>
+          </thead>
+          <tbody id="csv-table-body" class="divide-y divide-slate-800/60 text-slate-200">
+            <!-- Rendered by JS -->
+          </tbody>
+          <tfoot id="csv-table-summary" class="bg-slate-900 font-bold border-t-2 border-slate-700">
+            <!-- Rendered by JS (Averages) -->
+          </tfoot>
+        </table>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- JAVASCRIPT LOGIC ENGINE -->
+  <script>
+    // ==========================================
+    // PSYCHROMETRIC MATHEMATICAL FORMULAS (ASHRAE 101.325 kPa)
+    // ==========================================
+    const P_ATM = 101.325; // Standard atmospheric pressure in kPa
+
+    function getPsat(T) {
+      // Saturation vapor pressure in kPa (Magnus-Tetens)
+      return 0.61078 * Math.exp((17.27 * T) / (T + 237.3));
+    }
+
+    function getPv(T, RH) {
+      return (RH / 100) * getPsat(T);
+    }
+
+    function getWFromPv(Pv) {
+      if (P_ATM - Pv <= 0) return 0.030;
+      return 0.62198 * (Pv / (P_ATM - Pv));
+    }
+
+    function getW(T, RH) {
+      return getWFromPv(getPv(T, RH));
+    }
+
+    function getRHFromW(T, w) {
+      const Pv = (w * P_ATM) / (0.62198 + w);
+      const Psat = getPsat(T);
+      const rh = (Pv / Psat) * 100;
+      return Math.min(100, Math.max(0, rh));
+    }
+
+    function getEnthalpy(T, w) {
+      return 1.006 * T + w * (2501 + 1.86 * T);
+    }
+
+    function getVolume(T, w) {
+      return (0.287055 * (T + 273.15) * (1 + 1.6078 * w)) / P_ATM;
+    }
+
+    function getDPT(Pv) {
+      if (Pv <= 0.0001) return 0;
+      let low = -20, high = 50;
+      for (let i = 0; i < 25; i++) {
+        let mid = (low + high) / 2;
+        if (getPsat(mid) < Pv) low = mid;
+        else high = mid;
+      }
+      return (low + high) / 2;
+    }
+
+    function getWBT(T, w) {
+      const Pv = (w * P_ATM) / (0.62198 + w);
+      const Tdp = getDPT(Pv);
+      if (Tdp >= T) return T;
+
+      let low = Tdp, high = T;
+      for (let i = 0; i < 25; i++) {
+        let Twb = (low + high) / 2;
+        const Psat_wb = getPsat(Twb);
+        const w_sat_wb = 0.62198 * (Psat_wb / (P_ATM - Psat_wb));
+        const w_calc = ((2501 - 2.326 * Twb) * w_sat_wb - 1.006 * (T - Twb)) / (2501 + 1.86 * T - 4.186 * Twb);
+        if (w_calc < w) low = Twb;
+        else high = Twb;
+      }
+      return (low + high) / 2;
+    }
+
+    function solvePointState(T, RH) {
+      const w = getW(T, RH);
+      const w_g = w * 1000;
+      const Pv = getPv(T, RH);
+      const DPT = getDPT(Pv);
+      const WBT = getWBT(T, w);
+      const h = getEnthalpy(T, w);
+      const v = getVolume(T, w);
+      return { T, RH, w, w_g, DPT, WBT, h, v, Pv };
+    }
+
+    // ==========================================
+    // STATE DATA & COLOR PALETTE
+    // ==========================================
+    const POINT_COLORS = [
+      { border: '#0284c7', bg: '#e0f2fe', text: '#0369a1', name: 'Sky Blue' },
+      { border: '#059669', bg: '#d1fae5', text: '#047857', name: 'Emerald' },
+      { border: '#d97706', bg: '#fef3c7', text: '#b45309', name: 'Amber' },
+      { border: '#e11d48', bg: '#ffe4e6', text: '#be123c', name: 'Rose Red' }
+    ];
+
+    let points = [
+      { id: 1, enabled: true, name: 'Outdoor Air', dbt: 35.0, rh: 50.0, color: POINT_COLORS[0] },
+      { id: 2, enabled: true, name: 'Supply Air', dbt: 14.0, rh: 90.0, color: POINT_COLORS[1] },
+      { id: 3, enabled: true, name: 'Room Air', dbt: 24.0, rh: 50.0, color: POINT_COLORS[2] },
+      { id: 4, enabled: false, name: 'Mixed Air', dbt: 29.5, rh: 50.0, color: POINT_COLORS[3] }
+    ];
+
+    let processes = [
+      { id: 1, start: 1, end: 2, color: '#0284c7' },
+      { id: 2, start: 2, end: 3, color: '#d97706' }
+    ];
+
+    let selectedPointId = 1;
+    let csvCalculatedRows = [];
+
+    // Chart Axis Projection Settings (Fixed Full-Fit View)
+    const baseDbtMin = 0, baseDbtMax = 50;
+    const baseWMin = 0, baseWMax = 0.030; // 0 to 30 g/kg
+
+    let canvas, ctx;
+    const margin = { top: 40, right: 65, bottom: 50, left: 60 };
+
+    // Default Demo Dataset (Pre-populated)
+    const INITIAL_DEMO_CSV = [
+      { time: '00:00', p_dbt_in: 35.0, p_rh_in: 50.0, p_dbt_out: 24.0, p_rh_out: 85.0, p_m: 1.5, s_dbt_in: 35.0, s_rh_in: 50.0, s_dbt_out: 28.0, s_rh_out: 90.0, s_m: 1.2 },
+      { time: '00:15', p_dbt_in: 36.5, p_rh_in: 45.0, p_dbt_out: 24.5, p_rh_out: 82.0, p_m: 1.5, s_dbt_in: 36.5, s_rh_in: 45.0, s_dbt_out: 29.0, s_rh_out: 88.0, s_m: 1.2 },
+      { time: '00:30', p_dbt_in: 38.0, p_rh_in: 40.0, p_dbt_out: 25.0, p_rh_out: 80.0, p_m: 1.8, s_dbt_in: 38.0, s_rh_in: 40.0, s_dbt_out: 30.0, s_rh_out: 85.0, s_m: 1.5 },
+      { time: '00:45', p_dbt_in: 37.0, p_rh_in: 42.0, p_dbt_out: 23.5, p_rh_out: 84.0, p_m: 1.8, s_dbt_in: 37.0, s_rh_in: 42.0, s_dbt_out: 28.5, s_rh_out: 87.0, s_m: 1.5 },
+      { time: '01:00', p_dbt_in: 34.0, p_rh_in: 55.0, p_dbt_out: 22.0, p_rh_out: 88.0, p_m: 1.2, s_dbt_in: 34.0, s_rh_in: 55.0, s_dbt_out: 26.5, s_rh_out: 91.0, s_m: 1.0 },
+      { time: '01:15', p_dbt_in: 32.0, p_rh_in: 60.0, p_dbt_out: 21.0, p_rh_out: 90.0, p_m: 1.0, s_dbt_in: 32.0, s_rh_in: 60.0, s_dbt_out: 25.5, s_rh_out: 92.0, s_m: 1.0 },
+      { time: '01:30', p_dbt_in: 30.0, p_rh_in: 50.0, p_dbt_out: 20.0, p_rh_out: 85.0, p_m: 1.0, s_dbt_in: 30.0, s_rh_in: 50.0, s_dbt_out: 24.0, s_rh_out: 88.0, s_m: 1.0 },
+      { time: '01:45', p_dbt_in: 28.0, p_rh_in: 52.0, p_dbt_out: 19.0, p_rh_out: 86.0, p_m: 1.0, s_dbt_in: 28.0, s_rh_in: 52.0, s_dbt_out: 23.0, s_rh_out: 89.0, s_m: 1.0 }
+    ];
+
+    // ==========================================
+    // INITIALIZATION & TAB SWITCHING
+    // ==========================================
+    window.onload = function() {
+      canvas = document.getElementById('psychChart');
+      ctx = canvas.getContext('2d');
+
+      setupCanvasResolution();
+      window.addEventListener('resize', () => {
+        setupCanvasResolution();
+        drawChart();
+        renderCustomGraph();
+      });
+
+      // Drag and drop setup
+      const dropzone = document.getElementById('dropzone');
+      dropzone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropzone.classList.add('border-sky-500', 'bg-slate-900');
+      });
+      dropzone.addEventListener('dragleave', () => {
+        dropzone.classList.remove('border-sky-500', 'bg-slate-900');
+      });
+      dropzone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropzone.classList.remove('border-sky-500', 'bg-slate-900');
+        if (e.dataTransfer.files.length) {
+          parseAndCalculateCSV(e.dataTransfer.files[0]);
+        }
+      });
+
+      // Canvas mouse handlers
+      canvas.addEventListener('mousemove', handleCanvasMouseMove);
+      canvas.addEventListener('mouseleave', handleCanvasMouseLeave);
+      canvas.addEventListener('click', handleCanvasClick);
+
+      renderPointInputs();
+      renderProcessInputs();
+      drawChart();
+      updateSummaries();
+
+      // Load initial demo data for immediate interactivity
+      loadDemoDataset();
+    };
+
+    function switchTab(tab) {
+      const chartView = document.getElementById('view-chart');
+      const csvView = document.getElementById('view-csv');
+      const btnChart = document.getElementById('tab-btn-chart');
+      const btnCsv = document.getElementById('tab-btn-csv');
+
+      if (tab === 'chart') {
+        chartView.classList.remove('hidden');
+        csvView.classList.add('hidden');
+        btnChart.className = 'px-3 py-1.5 rounded-md font-medium transition bg-sky-600 text-white shadow';
+        btnCsv.className = 'px-3 py-1.5 rounded-md font-medium transition text-slate-400 hover:text-slate-200';
+        setupCanvasResolution();
+        drawChart();
+      } else {
+        chartView.classList.add('hidden');
+        csvView.classList.remove('hidden');
+        btnCsv.className = 'px-3 py-1.5 rounded-md font-medium transition bg-sky-600 text-white shadow';
+        btnChart.className = 'px-3 py-1.5 rounded-md font-medium transition text-slate-400 hover:text-slate-200';
+        renderCustomGraph();
+      }
+    }
+
+    function setupCanvasResolution() {
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const width = Math.max(300, Math.floor(rect.width));
+      const height = Math.max(400, Math.floor(rect.height));
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    function resetDefaults() {
+      points = [
+        { id: 1, enabled: true, name: 'Outdoor Air', dbt: 35.0, rh: 50.0, color: POINT_COLORS[0] },
+        { id: 2, enabled: true, name: 'Supply Air', dbt: 14.0, rh: 90.0, color: POINT_COLORS[1] },
+        { id: 3, enabled: true, name: 'Room Air', dbt: 24.0, rh: 50.0, color: POINT_COLORS[2] },
+        { id: 4, enabled: false, name: 'Mixed Air', dbt: 29.5, rh: 50.0, color: POINT_COLORS[3] }
+      ];
+      processes = [
+        { id: 1, start: 1, end: 2, color: '#0284c7' },
+        { id: 2, start: 2, end: 3, color: '#d97706' }
+      ];
+      renderPointInputs();
+      renderProcessInputs();
+      drawChart();
+      updateSummaries();
+    }
+
+    function loadPreset(type) {
+      if (type === 'summer') {
+        points = [
+          { id: 1, enabled: true, name: 'Outdoor Air', dbt: 35.0, rh: 50.0, color: POINT_COLORS[0] },
+          { id: 2, enabled: true, name: 'Coil Off-Air', dbt: 12.0, rh: 95.0, color: POINT_COLORS[1] },
+          { id: 3, enabled: true, name: 'Supply Air', dbt: 16.0, rh: 75.0, color: POINT_COLORS[2] },
+          { id: 4, enabled: true, name: 'Room Air', dbt: 24.0, rh: 50.0, color: POINT_COLORS[3] }
+        ];
+        processes = [
+          { id: 1, start: 1, end: 2, color: '#0284c7' },
+          { id: 2, start: 2, end: 3, color: '#059669' },
+          { id: 3, start: 3, end: 4, color: '#d97706' }
+        ];
+      } else if (type === 'winter') {
+        points = [
+          { id: 1, enabled: true, name: 'Outdoor Air', dbt: 5.0, rh: 70.0, color: POINT_COLORS[0] },
+          { id: 2, enabled: true, name: 'Pre-Heated', dbt: 25.0, rh: 18.0, color: POINT_COLORS[1] },
+          { id: 3, enabled: true, name: 'Humidified', dbt: 22.0, rh: 50.0, color: POINT_COLORS[2] },
+          { id: 4, enabled: true, name: 'Heated Room', dbt: 21.0, rh: 45.0, color: POINT_COLORS[3] }
+        ];
+        processes = [
+          { id: 1, start: 1, end: 2, color: '#e11d48' },
+          { id: 2, start: 2, end: 3, color: '#059669' },
+          { id: 3, start: 3, end: 4, color: '#d97706' }
+        ];
+      } else if (type === 'evap') {
+        points = [
+          { id: 1, enabled: true, name: 'Hot Dry Air', dbt: 38.0, rh: 20.0, color: POINT_COLORS[0] },
+          { id: 2, enabled: true, name: 'Evap Cooled Air', dbt: 24.0, rh: 70.0, color: POINT_COLORS[1] },
+          { id: 3, enabled: false, name: 'Point 3', dbt: 20.0, rh: 50.0, color: POINT_COLORS[2] },
+          { id: 4, enabled: false, name: 'Point 4', dbt: 30.0, rh: 30.0, color: POINT_COLORS[3] }
+        ];
+        processes = [
+          { id: 1, start: 1, end: 2, color: '#059669' }
+        ];
+      }
+      renderPointInputs();
+      renderProcessInputs();
+      drawChart();
+      updateSummaries();
+    }
+
+    // ==========================================
+    // UI RENDERERS (NUMERIC INPUTS ONLY)
+    // ==========================================
+    function renderPointInputs() {
+      const container = document.getElementById('points-container');
+      container.innerHTML = '';
+
+      points.forEach(pt => {
+        const div = document.createElement('div');
+        div.className = `p-3 rounded-lg border transition-all ${
+          pt.enabled ? 'bg-slate-950 border-slate-800' : 'bg-slate-950/40 border-slate-900 opacity-60'
+        } ${selectedPointId === pt.id ? 'ring-2 ring-sky-500/60' : ''}`;
+
+        div.innerHTML = `
+          <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center gap-2">
+              <input type="checkbox" ${pt.enabled ? 'checked' : ''} onchange="togglePoint(${pt.id}, this.checked)" class="rounded bg-slate-800 border-slate-700 text-sky-500 focus:ring-0">
+              <span class="w-3 h-3 rounded-full inline-block shrink-0" style="background-color: ${pt.color.border}"></span>
+              <span class="text-xs font-bold text-slate-200">Point ${pt.id}</span>
+              <input type="text" value="${pt.name}" onchange="updatePointName(${pt.id}, this.value)" class="bg-slate-900 border border-slate-800 rounded px-2 py-0.5 text-xs text-slate-200 focus:border-sky-500 focus:outline-none w-28">
+            </div>
+            <button onclick="selectActivePoint(${pt.id})" class="text-[11px] px-2 py-0.5 rounded transition ${selectedPointId === pt.id ? 'bg-sky-500/20 text-sky-400 border border-sky-500/40 font-semibold' : 'text-slate-400 hover:text-slate-200'}">
+              ${selectedPointId === pt.id ? '<i class="fa-solid fa-crosshairs"></i> Target' : 'Select'}
+            </button>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <div class="bg-slate-900/80 p-2 rounded border border-slate-800/80">
+              <label class="block text-[11px] text-slate-400 mb-1">DBT (°C)</label>
+              <div class="flex items-center gap-1">
+                <input type="number" min="0" max="50" step="0.1" value="${pt.dbt.toFixed(1)}" ${!pt.enabled ? 'disabled' : ''} onchange="updatePointVal(${pt.id}, 'dbt', parseFloat(this.value))" class="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-sky-300 focus:border-sky-500 focus:outline-none">
+                <span class="text-slate-500 text-[11px]">°C</span>
+              </div>
+            </div>
+
+            <div class="bg-slate-900/80 p-2 rounded border border-slate-800/80">
+              <label class="block text-[11px] text-slate-400 mb-1">RH (%)</label>
+              <div class="flex items-center gap-1">
+                <input type="number" min="1" max="100" step="0.5" value="${pt.rh.toFixed(1)}" ${!pt.enabled ? 'disabled' : ''} onchange="updatePointVal(${pt.id}, 'rh', parseFloat(this.value))" class="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-teal-300 focus:border-sky-500 focus:outline-none">
+                <span class="text-slate-500 text-[11px]">%</span>
+              </div>
+            </div>
+          </div>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    function renderProcessInputs() {
+      const container = document.getElementById('processes-container');
+      container.innerHTML = '';
+
+      if (processes.length === 0) {
+        container.innerHTML = `<div class="text-xs text-slate-500 italic p-2 text-center">No active connections. Click "+ Add Process" or a shortcut button below.</div>`;
+        return;
+      }
+
+      processes.forEach((proc, idx) => {
+        const div = document.createElement('div');
+        div.className = 'flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs';
+
+        let optionsStart = '', optionsEnd = '';
+        points.forEach(p => {
+          optionsStart += `<option value="${p.id}" ${proc.start === p.id ? 'selected' : ''}>P${p.id} (${p.name})</option>`;
+          optionsEnd += `<option value="${p.id}" ${proc.end === p.id ? 'selected' : ''}>P${p.id} (${p.name})</option>`;
+        });
+
+        div.innerHTML = `
+          <div class="w-3 h-3 rounded-full shrink-0" style="background-color: ${proc.color}"></div>
+          <span class="font-bold text-slate-300 shrink-0">Proc ${idx + 1}:</span>
+          
+          <select onchange="updateProcessEndpoints(${proc.id}, 'start', parseInt(this.value))" class="bg-slate-900 border border-slate-800 rounded px-1.5 py-1 text-slate-200 focus:border-sky-500 text-xs w-full">
+            ${optionsStart}
+          </select>
+
+          <span class="text-slate-400 font-bold">→</span>
+
+          <select onchange="updateProcessEndpoints(${proc.id}, 'end', parseInt(this.value))" class="bg-slate-900 border border-slate-800 rounded px-1.5 py-1 text-slate-200 focus:border-sky-500 text-xs w-full">
+            ${optionsEnd}
+          </select>
+
+          <button onclick="removeProcess(${proc.id})" class="text-slate-500 hover:text-rose-400 p-1 rounded transition">
+            <i class="fa-solid fa-trash-can"></i>
+          </button>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    function selectActivePoint(id) {
+      selectedPointId = id;
+      renderPointInputs();
+    }
+
+    function togglePoint(id, enabled) {
+      const pt = points.find(p => p.id === id);
+      if (pt) {
+        pt.enabled = enabled;
+        renderPointInputs();
+        renderProcessInputs();
+        drawChart();
+        updateSummaries();
+      }
+    }
+
+    function updatePointName(id, name) {
+      const pt = points.find(p => p.id === id);
+      if (pt) {
+        pt.name = name;
+        renderProcessInputs();
+        updateSummaries();
+      }
+    }
+
+    function updatePointVal(id, prop, val) {
+      const pt = points.find(p => p.id === id);
+      if (pt && !isNaN(val)) {
+        if (prop === 'dbt') pt.dbt = Math.min(50, Math.max(0, val));
+        if (prop === 'rh') pt.rh = Math.min(100, Math.max(1, val));
+        renderPointInputs();
+        drawChart();
+        updateSummaries();
+      }
+    }
+
+    function addNewProcess() {
+      const newId = processes.length ? Math.max(...processes.map(p => p.id)) + 1 : 1;
+      const processColors = ['#0284c7', '#d97706', '#059669', '#e11d48', '#9333ea', '#ec4899'];
+      const color = processColors[(newId - 1) % processColors.length];
+      
+      processes.push({ id: newId, start: 1, end: 2, color });
+      renderProcessInputs();
+      drawChart();
+      updateSummaries();
+    }
+
+    function quickAddProcess(start, end) {
+      const p1 = points.find(p => p.id === start);
+      const p2 = points.find(p => p.id === end);
+      if (p1) p1.enabled = true;
+      if (p2) p2.enabled = true;
+
+      const existing = processes.find(p => p.start === start && p.end === end);
+      if (!existing) {
+        const newId = processes.length ? Math.max(...processes.map(p => p.id)) + 1 : 1;
+        const processColors = ['#0284c7', '#d97706', '#059669', '#e11d48', '#9333ea'];
+        processes.push({ id: newId, start, end, color: processColors[(newId - 1) % processColors.length] });
+      }
+      renderPointInputs();
+      renderProcessInputs();
+      drawChart();
+      updateSummaries();
+    }
+
+    function updateProcessEndpoints(id, field, val) {
+      const proc = processes.find(p => p.id === id);
+      if (proc) {
+        proc[field] = val;
+        drawChart();
+        updateSummaries();
+      }
+    }
+
+    function removeProcess(id) {
+      processes = processes.filter(p => p.id !== id);
+      renderProcessInputs();
+      drawChart();
+      updateSummaries();
+    }
+
+    function clearProcesses() {
+      processes = [];
+      renderProcessInputs();
+      drawChart();
+      updateSummaries();
+    }
+
+    // ==========================================
+    // CANVAS COORDINATE PROJECTION (FIXED VIEW)
+    // ==========================================
+    function getPlotDimensions() {
+      const rect = canvas.getBoundingClientRect();
+      const width = rect.width;
+      const height = rect.height;
+      const plotW = width - margin.left - margin.right;
+      const plotH = height - margin.top - margin.bottom;
+      return { width, height, plotW, plotH };
+    }
+
+    function toCanvasX(dbt) {
+      const { plotW } = getPlotDimensions();
+      const norm = (dbt - baseDbtMin) / (baseDbtMax - baseDbtMin);
+      return margin.left + norm * plotW;
+    }
+
+    function toCanvasY(w) {
+      const { plotH } = getPlotDimensions();
+      const norm = (w - baseWMin) / (baseWMax - baseWMin);
+      return margin.top + plotH - norm * plotH;
+    }
+
+    function fromCanvasX(x) {
+      const { plotW } = getPlotDimensions();
+      const norm = (x - margin.left) / plotW;
+      const val = baseDbtMin + norm * (baseDbtMax - baseDbtMin);
+      return Math.min(baseDbtMax, Math.max(baseDbtMin, val));
+    }
+
+    function fromCanvasY(y) {
+      const { plotH } = getPlotDimensions();
+      const norm = (margin.top + plotH - y) / plotH;
+      const val = baseWMin + norm * (baseWMax - baseWMin);
+      return Math.min(baseWMax, Math.max(baseWMin, val));
+    }
+
+    // ==========================================
+    // CANVAS RENDERER ENGINE (CRISP HIGH CONTRAST)
+    // ==========================================
+    function drawChart() {
+      if (!ctx) return;
+      const { width, height, plotW, plotH } = getPlotDimensions();
+
+      ctx.fillStyle = '#020617';
+      ctx.fillRect(0, 0, width, height);
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(margin.left, margin.top, plotW, plotH);
+      ctx.clip();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(margin.left, margin.top, plotW, plotH);
+
+      const showRH = document.getElementById('toggle-rh').checked;
+      const showWBT = document.getElementById('toggle-wbt').checked;
+      const showEnthalpy = document.getElementById('toggle-enthalpy').checked;
+      const showVolume = document.getElementById('toggle-volume').checked;
+
+      // Axis Gridlines
+      ctx.strokeStyle = '#e2e8f0';
+      ctx.lineWidth = 1;
+
+      for (let t = baseDbtMin; t <= baseDbtMax; t += 5) {
+        const x = toCanvasX(t);
+        if (x >= margin.left && x <= margin.left + plotW) {
+          ctx.beginPath();
+          ctx.moveTo(x, margin.top);
+          ctx.lineTo(x, margin.top + plotH);
+          ctx.stroke();
+        }
+      }
+
+      for (let w_g = 0; w_g <= 30; w_g += 2.5) {
+        const w = w_g / 1000;
+        const y = toCanvasY(w);
+        if (y >= margin.top && y <= margin.top + plotH) {
+          ctx.beginPath();
+          ctx.moveTo(margin.left, y);
+          ctx.lineTo(margin.left + plotW, y);
+          ctx.stroke();
+        }
+      }
+
+      // Enthalpy Lines (Purple)
+      if (showEnthalpy) {
+        ctx.strokeStyle = '#c084fc';
+        ctx.lineWidth = 1;
+        for (let h = 10; h <= 120; h += 10) {
+          ctx.beginPath();
+          let started = false;
+          for (let t = baseDbtMin; t <= baseDbtMax; t += 1) {
+            const w = (h - 1.006 * t) / (2501 + 1.86 * t);
+            if (w >= baseWMin && w <= baseWMax) {
+              const x = toCanvasX(t);
+              const y = toCanvasY(w);
+              if (!started) { ctx.moveTo(x, y); started = true; }
+              else { ctx.lineTo(x, y); }
+            }
+          }
+          ctx.stroke();
+        }
+      }
+
+      // Specific Volume Lines (Orange)
+      if (showVolume) {
+        ctx.strokeStyle = '#f97316';
+        ctx.lineWidth = 1;
+        const volumes = [0.80, 0.825, 0.85, 0.875, 0.90, 0.925, 0.95];
+        volumes.forEach(v => {
+          ctx.beginPath();
+          let started = false;
+          for (let t = baseDbtMin; t <= baseDbtMax; t += 0.5) {
+            const w = (1 / 1.6078) * ((101.325 * v) / (0.287055 * (t + 273.15)) - 1);
+            if (w >= baseWMin && w <= baseWMax) {
+              const x = toCanvasX(t);
+              const y = toCanvasY(w);
+              if (!started) { ctx.moveTo(x, y); started = true; }
+              else { ctx.lineTo(x, y); }
+            }
+          }
+          ctx.stroke();
+        });
+      }
+
+      // WBT Lines (Dashed Green)
+      if (showWBT) {
+        ctx.strokeStyle = '#16a34a';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 3]);
+        for (let twb = 5; twb <= 35; twb += 5) {
+          ctx.beginPath();
+          const w_sat_wb = getW(twb, 100);
+          let started = false;
+          for (let t = twb; t <= baseDbtMax; t += 0.5) {
+            const w = ((2501 - 2.326 * twb) * w_sat_wb - 1.006 * (t - twb)) / (2501 + 1.86 * t - 4.186 * twb);
+            if (w >= baseWMin && w <= baseWMax) {
+              const x = toCanvasX(t);
+              const y = toCanvasY(w);
+              if (!started) { ctx.moveTo(x, y); started = true; }
+              else { ctx.lineTo(x, y); }
+            }
+          }
+          ctx.stroke();
+        }
+        ctx.setLineDash([]);
+      }
+
+      // RH Curves (Blue)
+      if (showRH) {
+        const rhValues = [10, 20, 30, 40, 50, 60, 70, 80, 90];
+        rhValues.forEach(rh => {
+          ctx.strokeStyle = '#0284c7';
+          ctx.lineWidth = 1.25;
+          ctx.beginPath();
+          let started = false;
+          for (let t = baseDbtMin; t <= baseDbtMax; t += 0.5) {
+            const w = getW(t, rh);
+            if (w <= baseWMax) {
+              const x = toCanvasX(t);
+              const y = toCanvasY(w);
+              if (!started) { ctx.moveTo(x, y); started = true; }
+              else { ctx.lineTo(x, y); }
+            }
+          }
+          ctx.stroke();
+
+          const labelT = 32;
+          const labelW = getW(labelT, rh);
+          if (labelW <= baseWMax) {
+            const lx = toCanvasX(labelT);
+            const ly = toCanvasY(labelW);
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(lx - 12, ly - 7, 24, 14);
+            ctx.strokeStyle = '#cbd5e1';
+            ctx.lineWidth = 0.5;
+            ctx.strokeRect(lx - 12, ly - 7, 24, 14);
+            ctx.fillStyle = '#0369a1';
+            ctx.font = 'bold 9px Inter';
+            ctx.textAlign = 'center';
+            ctx.fillText(`${rh}%`, lx, ly + 3);
+          }
+        });
+      }
+
+      // Saturation Curve (100% RH)
+      ctx.strokeStyle = '#0f172a';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      let startedSat = false;
+      for (let t = baseDbtMin; t <= baseDbtMax; t += 0.2) {
+        const w = getW(t, 100);
+        if (w <= baseWMax) {
+          const x = toCanvasX(t);
+          const y = toCanvasY(w);
+          if (!startedSat) { ctx.moveTo(x, y); startedSat = true; }
+          else { ctx.lineTo(x, y); }
+        }
+      }
+      ctx.stroke();
+
+      // Process Vectors
+      processes.forEach(proc => {
+        const pStart = points.find(p => p.id === proc.start && p.enabled);
+        const pEnd = points.find(p => p.id === proc.end && p.enabled);
+
+        if (pStart && pEnd) {
+          const x1 = toCanvasX(pStart.dbt);
+          const y1 = toCanvasY(getW(pStart.dbt, pStart.rh));
+          const x2 = toCanvasX(pEnd.dbt);
+          const y2 = toCanvasY(getW(pEnd.dbt, pEnd.rh));
+
+          ctx.strokeStyle = proc.color;
+          ctx.lineWidth = 3.5;
+          ctx.beginPath();
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(x2, y2);
+          ctx.stroke();
+
+          const angle = Math.atan2(y2 - y1, x2 - x1);
+          const headLen = 12;
+          ctx.fillStyle = proc.color;
+          ctx.beginPath();
+          ctx.moveTo(x2, y2);
+          ctx.lineTo(x2 - headLen * Math.cos(angle - Math.PI / 6), y2 - headLen * Math.sin(angle - Math.PI / 6));
+          ctx.lineTo(x2 - headLen * Math.cos(angle + Math.PI / 6), y2 - headLen * Math.sin(angle + Math.PI / 6));
+          ctx.closePath();
+          ctx.fill();
+
+          const midX = (x1 + x2) / 2;
+          const midY = (y1 + y2) / 2;
+
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(midX - 16, midY - 9, 32, 18);
+          ctx.strokeStyle = proc.color;
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(midX - 16, midY - 9, 32, 18);
+
+          ctx.fillStyle = proc.color;
+          ctx.font = 'bold 10px Inter';
+          ctx.textAlign = 'center';
+          ctx.fillText(`${pStart.id}→${pEnd.id}`, midX, midY + 4);
+        }
+      });
+
+      // State Points & Smart Label Bounding Box Avoidance
+      const renderedBadges = [];
+
+      points.filter(p => p.enabled).forEach(pt => {
+        const px = toCanvasX(pt.dbt);
+        const pw = getW(pt.dbt, pt.rh);
+        const py = toCanvasY(pw);
+
+        ctx.fillStyle = pt.color.bg;
+        ctx.beginPath();
+        ctx.arc(px, py, 11, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = pt.color.border;
+        ctx.beginPath();
+        ctx.arc(px, py, 6, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        const labelText = `P${pt.id}: ${pt.name} (${pt.dbt.toFixed(1)}°C, ${pt.rh.toFixed(0)}%)`;
+        ctx.font = 'bold 11px Inter';
+        const textWidth = ctx.measureText(labelText).width;
+        const badgeW = textWidth + 16;
+        const badgeH = 22;
+
+        const candidates = [
+          { ox: 15, oy: -28 },
+          { ox: -badgeW - 15, oy: -28 },
+          { ox: 15, oy: 15 },
+          { ox: -badgeW - 15, oy: 15 },
+          { ox: 25, oy: -40 },
+          { ox: -badgeW - 25, oy: -40 }
+        ];
+
+        let bestPos = candidates[0];
+        for (let cand of candidates) {
+          const bx = px + cand.ox;
+          const by = py + cand.oy;
+          let overlaps = false;
+          for (let b of renderedBadges) {
+            if (bx < b.x + b.w && bx + badgeW > b.x && by < b.y + b.h && by + badgeH > b.y) {
+              overlaps = true;
+              break;
+            }
+          }
+          if (!overlaps) {
+            bestPos = cand;
+            break;
+          }
+        }
+
+        const badgeX = px + bestPos.ox;
+        const badgeY = py + bestPos.oy;
+
+        renderedBadges.push({ x: badgeX, y: badgeY, w: badgeW, h: badgeH });
+
+        const lineStartX = px + (bestPos.ox > 0 ? 6 : -6);
+        const lineStartY = py + (bestPos.oy > 0 ? 6 : -6);
+        const lineEndX = badgeX + (bestPos.ox > 0 ? 0 : badgeW);
+        const lineEndY = badgeY + badgeH / 2;
+
+        ctx.strokeStyle = pt.color.border;
+        ctx.lineWidth = 1.25;
+        ctx.beginPath();
+        ctx.moveTo(lineStartX, lineStartY);
+        ctx.lineTo(lineEndX, lineEndY);
+        ctx.stroke();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.shadowColor = 'rgba(15, 23, 42, 0.15)';
+        ctx.shadowBlur = 6;
+        ctx.fillRect(badgeX, badgeY, badgeW, badgeH);
+        ctx.shadowBlur = 0;
+
+        ctx.strokeStyle = pt.color.border;
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(badgeX, badgeY, badgeW, badgeH);
+
+        ctx.fillStyle = pt.color.text;
+        ctx.textAlign = 'left';
+        ctx.fillText(labelText, badgeX + 8, badgeY + 15);
+      });
+
+      ctx.restore();
+
+      // Outer Axis Border & Scale Labels
+      ctx.strokeStyle = '#334155';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(margin.left, margin.top, plotW, plotH);
+
+      ctx.fillStyle = '#cbd5e1';
+      ctx.font = '500 11px Inter';
+      ctx.textAlign = 'center';
+
+      for (let t = baseDbtMin; t <= baseDbtMax; t += 5) {
+        const x = toCanvasX(t);
+        if (x >= margin.left - 5 && x <= margin.left + plotW + 5) {
+          ctx.fillText(`${t}°C`, x, margin.top + plotH + 18);
+        }
+      }
+
+      ctx.textAlign = 'left';
+      for (let w_g = 0; w_g <= 30; w_g += 5) {
+        const w = w_g / 1000;
+        const y = toCanvasY(w);
+        if (y >= margin.top - 5 && y <= margin.top + plotH + 5) {
+          ctx.fillText(`${w_g}`, margin.left + plotW + 10, y + 4);
+        }
+      }
+
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '600 12px Inter';
+      ctx.textAlign = 'center';
+      ctx.fillText('Dry Bulb Temperature DBT (°C)', margin.left + plotW / 2, height - 12);
+
+      ctx.save();
+      ctx.translate(width - 15, margin.top + plotH / 2);
+      ctx.rotate(Math.PI / 2);
+      ctx.fillText('Humidity Ratio w (g/kg dry air)', 0, 0);
+      ctx.restore();
+    }
+
+    // ==========================================
+    // CANVAS INTERACTION & CROSSHAIR READOUT
+    // ==========================================
+    function handleCanvasMouseMove(e) {
+      const rect = canvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      const { plotW, plotH } = getPlotDimensions();
+
+      if (mouseX >= margin.left && mouseX <= margin.left + plotW &&
+          mouseY >= margin.top && mouseY <= margin.top + plotH) {
+        
+        const dbt = fromCanvasX(mouseX);
+        const w = fromCanvasY(mouseY);
+        const rh = getRHFromW(dbt, w);
+
+        const state = solvePointState(dbt, rh);
+
+        document.getElementById('hv-dbt').innerText = state.T.toFixed(1);
+        document.getElementById('hv-rh').innerText = state.RH.toFixed(1);
+        document.getElementById('hv-w').innerText = state.w_g.toFixed(2);
+        document.getElementById('hv-wbt').innerText = state.WBT.toFixed(1);
+        document.getElementById('hv-dpt').innerText = state.DPT.toFixed(1);
+        document.getElementById('hv-h').innerText = state.h.toFixed(1);
+        document.getElementById('hv-v').innerText = state.v.toFixed(3);
+
+        drawChart();
+        drawCrosshairs(mouseX, mouseY);
+      }
+    }
+
+    function drawCrosshairs(x, y) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(margin.left, margin.top, getPlotDimensions().plotW, getPlotDimensions().plotH);
+      ctx.clip();
+
+      ctx.strokeStyle = '#0284c7';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+
+      ctx.beginPath();
+      ctx.moveTo(x, margin.top);
+      ctx.lineTo(x, margin.top + getPlotDimensions().plotH);
+      ctx.moveTo(margin.left, y);
+      ctx.lineTo(margin.left + getPlotDimensions().plotW, y);
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    function handleCanvasClick(e) {
+      const rect = canvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      const { plotW, plotH } = getPlotDimensions();
+      if (mouseX >= margin.left && mouseX <= margin.left + plotW &&
+          mouseY >= margin.top && mouseY <= margin.top + plotH) {
+
+        const dbt = Math.round(fromCanvasX(mouseX) * 10) / 10;
+        const w = fromCanvasY(mouseY);
+        const rh = Math.min(100, Math.max(1, Math.round(getRHFromW(dbt, w) * 10) / 10));
+
+        const targetPoint = points.find(p => p.id === selectedPointId);
+        if (targetPoint) {
+          targetPoint.dbt = dbt;
+          targetPoint.rh = rh;
+          targetPoint.enabled = true;
+          renderPointInputs();
+          drawChart();
+          updateSummaries();
+        }
+      }
+    }
+
+    function handleCanvasMouseLeave() {
+      drawChart();
+    }
+
+    // ==========================================
+    // HVAC PROCESS CLASSIFICATION & SUMMARIES
+    // ==========================================
+    function classifyProcess(dT, dw, dh) {
+      const epsT = 0.2;
+      const epsW = 0.1;
+
+      if (Math.abs(dT) <= epsT && Math.abs(dw) <= epsW) return 'No State Change';
+      if (dT > epsT && Math.abs(dw) <= epsW) return 'Sensible Heating';
+      if (dT < -epsT && Math.abs(dw) <= epsW) return 'Sensible Cooling';
+      if (dT < -epsT && dw < -epsW) return 'Cooling & Dehumidification';
+      if (dT > epsT && dw > epsW) return 'Heating & Humidification';
+      if (dT < -epsT && dw > epsW && Math.abs(dh) <= 1.5) return 'Evaporative Cooling';
+      if (dT < -epsT && dw > epsW) return 'Cooling & Humidification';
+      if (dT > epsT && dw < -epsW) return 'Desiccant Dehumidification';
+      if (Math.abs(dT) <= epsT && dw > epsW) return 'Isothermal Humidification';
+      if (Math.abs(dT) <= epsT && dw < -epsW) return 'Isothermal Dehumidification';
+
+      return 'Complex HVAC Process';
+    }
+
+    function updateSummaries() {
+      const pointsTbody = document.getElementById('points-table-body');
+      pointsTbody.innerHTML = '';
+
+      points.forEach(pt => {
+        if (!pt.enabled) return;
+
+        const state = solvePointState(pt.dbt, pt.rh);
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-slate-800/40 transition';
+
+        tr.innerHTML = `
+          <td class="py-2.5 font-bold flex items-center gap-1.5">
+            <span class="w-2.5 h-2.5 rounded-full inline-block" style="background:${pt.color.border}"></span>
+            P${pt.id}
+          </td>
+          <td class="py-2.5 text-slate-300 font-sans">${pt.name}</td>
+          <td class="py-2.5 text-sky-400 font-bold">${state.T.toFixed(1)}</td>
+          <td class="py-2.5 text-teal-400 font-bold">${state.RH.toFixed(1)}%</td>
+          <td class="py-2.5 text-emerald-400">${state.w_g.toFixed(2)}</td>
+          <td class="py-2.5 text-amber-400">${state.WBT.toFixed(1)}</td>
+          <td class="py-2.5 text-indigo-400">${state.DPT.toFixed(1)}</td>
+          <td class="py-2.5 text-purple-400">${state.h.toFixed(1)}</td>
+          <td class="py-2.5 text-orange-400">${state.v.toFixed(3)}</td>
+        `;
+        pointsTbody.appendChild(tr);
+      });
+
+      const procTbody = document.getElementById('processes-table-body');
+      procTbody.innerHTML = '';
+
+      if (processes.length === 0) {
+        procTbody.innerHTML = `<tr><td colspan="6" class="py-3 text-center text-slate-500 font-sans italic">No active processes configured.</td></tr>`;
+        return;
+      }
+
+      processes.forEach((proc, idx) => {
+        const pStart = points.find(p => p.id === proc.start && p.enabled);
+        const pEnd = points.find(p => p.id === proc.end && p.enabled);
+
+        if (!pStart || !pEnd) {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td colspan="6" class="py-2 text-slate-500 font-sans">Process ${idx+1}: Disabled state points</td>`;
+          procTbody.appendChild(tr);
+          return;
+        }
+
+        const st1 = solvePointState(pStart.dbt, pStart.rh);
+        const st2 = solvePointState(pEnd.dbt, pEnd.rh);
+
+        const dT = st2.T - st1.T;
+        const dw_g = st2.w_g - st1.w_g;
+        const dh = st2.h - st1.h;
+
+        const processType = classifyProcess(dT, dw_g, dh);
+
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-slate-800/40 transition';
+        tr.innerHTML = `
+          <td class="py-2.5 font-bold" style="color: ${proc.color}">Process ${idx + 1}</td>
+          <td class="py-2.5 text-slate-200">P${pStart.id} (${pStart.name}) → P${pEnd.id} (${pEnd.name})</td>
+          <td class="py-2.5 font-sans font-medium text-amber-300">${processType}</td>
+          <td class="py-2.5 ${dT >= 0 ? 'text-rose-400' : 'text-sky-400'}">${dT >= 0 ? '+' : ''}${dT.toFixed(1)}</td>
+          <td class="py-2.5 ${dw_g >= 0 ? 'text-emerald-400' : 'text-amber-400'}">${dw_g >= 0 ? '+' : ''}${dw_g.toFixed(2)}</td>
+          <td class="py-2.5 ${dh >= 0 ? 'text-purple-400' : 'text-teal-400'}">${dh >= 0 ? '+' : ''}${dh.toFixed(1)}</td>
+        `;
+        procTbody.appendChild(tr);
+      });
+    }
+
+    // ==========================================
+    // CSV BATCH ENGINE & EXCHANGER CALCULATOR
+    // ==========================================
+    function loadDemoDataset() {
+      processCSVData(INITIAL_DEMO_CSV);
+    }
+
+    function downloadSampleCSV() {
+      const csvContent = [
+        "Time,Primary_Inlet_DBT,Primary_Inlet_RH,Primary_Outlet_DBT,Primary_Outlet_RH,Primary_Mass_Flow,Secondary_Inlet_DBT,Secondary_Inlet_RH,Secondary_Outlet_DBT,Secondary_Outlet_RH,Secondary_Mass_Flow",
+        "00:00,35.0,50.0,24.0,85.0,1.5,35.0,50.0,28.0,90.0,1.2",
+        "00:15,36.5,45.0,24.5,82.0,1.5,36.5,45.0,29.0,88.0,1.2",
+        "00:30,38.0,40.0,25.0,80.0,1.8,38.0,40.0,30.0,85.0,1.5",
+        "00:45,37.0,42.0,23.5,84.0,1.8,37.0,42.0,28.5,87.0,1.5",
+        "01:00,34.0,55.0,22.0,88.0,1.2,34.0,55.0,26.5,91.0,1.0",
+        "01:15,32.0,60.0,21.0,90.0,1.0,32.0,60.0,25.5,92.0,1.0",
+        "01:30,30.0,50.0,20.0,85.0,1.0,30.0,50.0,24.0,88.0,1.0",
+        "01:45,28.0,52.0,19.0,86.0,1.0,28.0,52.0,23.0,89.0,1.0"
+      ].join("\n");
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'sample_exchanger_data.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+
+    function handleCSVFileSelect(e) {
+      if (e.target.files.length) {
+        parseAndCalculateCSV(e.target.files[0]);
+      }
+    }
+
+    function parseAndCalculateCSV(file) {
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        const text = evt.target.result;
+        const lines = text.split(/\r\n|\n/).map(l => l.trim()).filter(l => l.length > 0);
+
+        if (lines.length < 2) {
+          alert('CSV file must contain a header line and at least one data row.');
+          return;
+        }
+
+        const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+
+        const findColIdx = (keywords) => {
+          return headers.findIndex(h => keywords.every(k => h.includes(k)));
+        };
+
+        const timeIdx = headers.findIndex(h => h.includes('time') || h.includes('timestamp') || h.includes('hour') || h.includes('min'));
+
+        let colMap = {
+          time: timeIdx,
+          p_dbt_in: findColIdx(['primary', 'in', 'dbt']) >= 0 ? findColIdx(['primary', 'in', 'dbt']) : (timeIdx === 0 ? 1 : 0),
+          p_rh_in: findColIdx(['primary', 'in', 'rh']) >= 0 ? findColIdx(['primary', 'in', 'rh']) : (timeIdx === 0 ? 2 : 1),
+          p_dbt_out: findColIdx(['primary', 'out', 'dbt']) >= 0 ? findColIdx(['primary', 'out', 'dbt']) : (timeIdx === 0 ? 3 : 2),
+          p_rh_out: findColIdx(['primary', 'out', 'rh']) >= 0 ? findColIdx(['primary', 'out', 'rh']) : (timeIdx === 0 ? 4 : 3),
+          p_m: findColIdx(['primary', 'mass']) >= 0 ? findColIdx(['primary', 'mass']) : (findColIdx(['primary', 'flow']) >= 0 ? findColIdx(['primary', 'flow']) : (timeIdx === 0 ? 5 : 4)),
+
+          s_dbt_in: findColIdx(['secondary', 'in', 'dbt']) >= 0 ? findColIdx(['secondary', 'in', 'dbt']) : (timeIdx === 0 ? 6 : 5),
+          s_rh_in: findColIdx(['secondary', 'in', 'rh']) >= 0 ? findColIdx(['secondary', 'in', 'rh']) : (timeIdx === 0 ? 7 : 6),
+          s_dbt_out: findColIdx(['secondary', 'out', 'dbt']) >= 0 ? findColIdx(['secondary', 'out', 'dbt']) : (timeIdx === 0 ? 8 : 7),
+          s_rh_out: findColIdx(['secondary', 'out', 'rh']) >= 0 ? findColIdx(['secondary', 'out', 'rh']) : (timeIdx === 0 ? 9 : 8),
+          s_m: findColIdx(['secondary', 'mass']) >= 0 ? findColIdx(['secondary', 'mass']) : (findColIdx(['secondary', 'flow']) >= 0 ? findColIdx(['secondary', 'flow']) : (timeIdx === 0 ? 10 : 9))
+        };
+
+        let parsedRows = [];
+
+        for (let i = 1; i < lines.length; i++) {
+          const rawRow = lines[i].split(',').map(v => v.trim());
+          if (rawRow.length < 4) continue;
+
+          let timeVal = colMap.time >= 0 && rawRow[colMap.time] ? rawRow[colMap.time] : `Sample ${i}`;
+
+          parsedRows.push({
+            time: timeVal,
+            p_dbt_in: parseFloat(rawRow[colMap.p_dbt_in]) || 35,
+            p_rh_in: parseFloat(rawRow[colMap.p_rh_in]) || 50,
+            p_dbt_out: parseFloat(rawRow[colMap.p_dbt_out]) || 24,
+            p_rh_out: parseFloat(rawRow[colMap.p_rh_out]) || 85,
+            p_m: parseFloat(rawRow[colMap.p_m]) || 1.5,
+
+            s_dbt_in: parseFloat(rawRow[colMap.s_dbt_in]) || 35,
+            s_rh_in: parseFloat(rawRow[colMap.s_rh_in]) || 50,
+            s_dbt_out: parseFloat(rawRow[colMap.s_dbt_out]) || 28,
+            s_rh_out: parseFloat(rawRow[colMap.s_rh_out]) || 90,
+            s_m: parseFloat(rawRow[colMap.s_m]) || 1.2
+          });
+        }
+
+        processCSVData(parsedRows);
+      };
+      reader.readAsText(file);
+    }
+
+    function processCSVData(rowsData) {
+      csvCalculatedRows = rowsData.map((r, idx) => {
+        const st_p_in = solvePointState(r.p_dbt_in, r.p_rh_in);
+        const st_p_out = solvePointState(r.p_dbt_out, r.p_rh_out);
+        const st_s_in = solvePointState(r.s_dbt_in, r.s_rh_in);
+        const st_s_out = solvePointState(r.s_dbt_out, r.s_rh_out);
+
+        const Q_p = r.p_m * Math.abs(st_p_in.h - st_p_out.h);
+        const Q_s = r.s_m * Math.abs(st_s_in.h - st_s_out.h);
+
+        const denomWB = r.p_dbt_in - st_s_in.WBT;
+        const eff_wb = Math.abs(denomWB) > 0.001 ? ((r.p_dbt_in - r.p_dbt_out) / denomWB) * 100 : 0;
+
+        const denomDP = r.p_dbt_in - st_s_in.DPT;
+        const eff_dp = Math.abs(denomDP) > 0.001 ? ((r.p_dbt_in - r.p_dbt_out) / denomDP) * 100 : 0;
+
+        return {
+          rowNum: idx + 1,
+          time: r.time,
+          p_dbt_in: r.p_dbt_in, p_rh_in: r.p_rh_in, wbt_p_in: st_p_in.WBT, h_p_in: st_p_in.h,
+          p_dbt_out: r.p_dbt_out, p_rh_out: r.p_rh_out, wbt_p_out: st_p_out.WBT, h_p_out: st_p_out.h,
+          p_m: r.p_m, Q_p,
+          s_dbt_in: r.s_dbt_in, s_rh_in: r.s_rh_in, wbt_s_in: st_s_in.WBT, h_s_in: st_s_in.h,
+          s_dbt_out: r.s_dbt_out, s_rh_out: r.s_rh_out, wbt_s_out: st_s_out.WBT, h_s_out: st_s_out.h,
+          s_m: r.s_m, Q_s,
+          eff_wb, eff_dp
+        };
+      });
+
+      renderCSVTable();
+      renderCustomGraph();
+    }
+
+    function renderCSVTable() {
+      const tbody = document.getElementById('csv-table-body');
+      const tfoot = document.getElementById('csv-table-summary');
+      const rowCountSpan = document.getElementById('batch-row-count');
+
+      tbody.innerHTML = '';
+      tfoot.innerHTML = '';
+
+      if (csvCalculatedRows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="24" class="py-8 text-center text-slate-500 font-sans italic">No valid data rows found in CSV.</td></tr>`;
+        rowCountSpan.innerText = '0 Rows Processed';
+        return;
+      }
+
+      rowCountSpan.innerText = `${csvCalculatedRows.length} Rows Processed`;
+
+      let sums = {
+        p_dbt_in:0, p_rh_in:0, wbt_p_in:0, h_p_in:0, p_dbt_out:0, p_rh_out:0, wbt_p_out:0, h_p_out:0, p_m:0, Q_p:0,
+        s_dbt_in:0, s_rh_in:0, wbt_s_in:0, h_s_in:0, s_dbt_out:0, s_rh_out:0, wbt_s_out:0, h_s_out:0, s_m:0, Q_s:0,
+        eff_wb:0, eff_dp:0
+      };
+
+      csvCalculatedRows.forEach((r) => {
+        Object.keys(sums).forEach(k => sums[k] += r[k]);
+
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-slate-800/40 transition text-[11px]';
+        tr.innerHTML = `
+          <td class="py-2 px-3 font-bold text-slate-400">
+            <span>${r.rowNum}</span>
+            <span class="block text-[9px] font-normal text-slate-500">${r.time}</span>
+          </td>
+          
+          <td class="py-2 px-3 border-l border-slate-800 text-sky-300">${r.p_dbt_in.toFixed(1)}</td>
+          <td class="py-2 px-3">${r.p_rh_in.toFixed(1)}</td>
+          <td class="py-2 px-3 text-amber-300">${r.wbt_p_in.toFixed(1)}</td>
+          <td class="py-2 px-3 text-purple-300">${r.h_p_in.toFixed(1)}</td>
+          <td class="py-2 px-3 text-sky-400 font-bold">${r.p_dbt_out.toFixed(1)}</td>
+          <td class="py-2 px-3">${r.p_rh_out.toFixed(1)}</td>
+          <td class="py-2 px-3 text-amber-400">${r.wbt_p_out.toFixed(1)}</td>
+          <td class="py-2 px-3 text-purple-400">${r.h_p_out.toFixed(1)}</td>
+          <td class="py-2 px-3">${r.p_m.toFixed(2)}</td>
+          <td class="py-2 px-3 font-bold text-purple-300 bg-purple-950/20">${r.Q_p.toFixed(2)}</td>
+
+          <td class="py-2 px-3 border-l border-slate-800 text-emerald-300">${r.s_dbt_in.toFixed(1)}</td>
+          <td class="py-2 px-3">${r.s_rh_in.toFixed(1)}</td>
+          <td class="py-2 px-3 text-amber-300">${r.wbt_s_in.toFixed(1)}</td>
+          <td class="py-2 px-3 text-purple-300">${r.h_s_in.toFixed(1)}</td>
+          <td class="py-2 px-3 text-emerald-400 font-bold">${r.s_dbt_out.toFixed(1)}</td>
+          <td class="py-2 px-3">${r.s_rh_out.toFixed(1)}</td>
+          <td class="py-2 px-3 text-amber-400">${r.wbt_s_out.toFixed(1)}</td>
+          <td class="py-2 px-3 text-purple-400">${r.h_s_out.toFixed(1)}</td>
+          <td class="py-2 px-3">${r.s_m.toFixed(2)}</td>
+          <td class="py-2 px-3 font-bold text-purple-300 bg-purple-950/20">${r.Q_s.toFixed(2)}</td>
+
+          <td class="py-2 px-3 border-l border-slate-800 font-bold text-sky-400 bg-sky-950/30">${r.eff_wb.toFixed(1)}%</td>
+          <td class="py-2 px-3 font-bold text-teal-400 bg-teal-950/30">${r.eff_dp.toFixed(1)}%</td>
+
+          <td class="py-2 px-3 border-l border-slate-800 text-center">
+            <button onclick="plotCSVRowOnChart(${r.rowNum - 1})" class="px-2 py-0.5 rounded bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 text-[10px] font-sans transition">
+              <i class="fa-solid fa-chart-line"></i> Plot
+            </button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      // Averages
+      const N = csvCalculatedRows.length;
+      const avgs = {};
+      Object.keys(sums).forEach(k => avgs[k] = sums[k] / N);
+
+      // KPI Dashboard
+      document.getElementById('kpi-avg-eff-wb').innerText = `${avgs.eff_wb.toFixed(1)}%`;
+      document.getElementById('kpi-avg-eff-dp').innerText = `${avgs.eff_dp.toFixed(1)}%`;
+      document.getElementById('kpi-avg-qp').innerText = `${avgs.Q_p.toFixed(2)} kW`;
+      document.getElementById('kpi-avg-qs').innerText = `${avgs.Q_s.toFixed(2)} kW`;
+
+      const thermalRatio = avgs.Q_p > 0 ? ((avgs.Q_s / avgs.Q_p) * 100).toFixed(1) : '100.0';
+      document.getElementById('kpi-thermal-ratio').innerText = `${thermalRatio}%`;
+
+      document.getElementById('kpi-pri-t').innerText = `${avgs.p_dbt_in.toFixed(1)}°C → ${avgs.p_dbt_out.toFixed(1)}°C`;
+      document.getElementById('kpi-sec-t').innerText = `${avgs.s_dbt_in.toFixed(1)}°C → ${avgs.s_dbt_out.toFixed(1)}°C`;
+      
+      const avgDhPri = Math.abs(avgs.h_p_in - avgs.h_p_out);
+      document.getElementById('kpi-pri-dh').innerText = `${avgDhPri.toFixed(1)} kJ/kg`;
+
+      // Footer Row
+      tfoot.innerHTML = `
+        <tr class="text-[11px] bg-slate-900 border-t-2 border-slate-700">
+          <td class="py-3 px-3 font-bold text-amber-400 uppercase tracking-wider">AVERAGE</td>
+          
+          <td class="py-3 px-3 border-l border-slate-800 text-sky-300">${avgs.p_dbt_in.toFixed(1)}</td>
+          <td class="py-3 px-3">${avgs.p_rh_in.toFixed(1)}</td>
+          <td class="py-3 px-3 text-amber-300">${avgs.wbt_p_in.toFixed(1)}</td>
+          <td class="py-3 px-3 text-purple-300">${avgs.h_p_in.toFixed(1)}</td>
+          <td class="py-3 px-3 text-sky-400 font-bold">${avgs.p_dbt_out.toFixed(1)}</td>
+          <td class="py-3 px-3">${avgs.p_rh_out.toFixed(1)}</td>
+          <td class="py-3 px-3 text-amber-400">${avgs.wbt_p_out.toFixed(1)}</td>
+          <td class="py-3 px-3 text-purple-400">${avgs.h_p_out.toFixed(1)}</td>
+          <td class="py-3 px-3">${avgs.p_m.toFixed(2)}</td>
+          <td class="py-3 px-3 font-bold text-purple-300 bg-purple-900/40">${avgs.Q_p.toFixed(2)}</td>
+
+          <td class="py-3 px-3 border-l border-slate-800 text-emerald-300">${avgs.s_dbt_in.toFixed(1)}</td>
+          <td class="py-3 px-3">${avgs.s_rh_in.toFixed(1)}</td>
+          <td class="py-3 px-3 text-amber-300">${avgs.wbt_s_in.toFixed(1)}</td>
+          <td class="py-3 px-3 text-purple-300">${avgs.h_s_in.toFixed(1)}</td>
+          <td class="py-3 px-3 text-emerald-400 font-bold">${avgs.s_dbt_out.toFixed(1)}</td>
+          <td class="py-3 px-3">${avgs.s_rh_out.toFixed(1)}</td>
+          <td class="py-3 px-3 text-amber-400">${avgs.wbt_s_out.toFixed(1)}</td>
+          <td class="py-3 px-3 text-purple-400">${avgs.h_s_out.toFixed(1)}</td>
+          <td class="py-3 px-3">${avgs.s_m.toFixed(2)}</td>
+          <td class="py-3 px-3 font-bold text-purple-300 bg-purple-900/40">${avgs.Q_s.toFixed(2)}</td>
+
+          <td class="py-3 px-3 border-l border-slate-800 font-bold text-sky-300 bg-sky-900/50">${avgs.eff_wb.toFixed(1)}%</td>
+          <td class="py-3 px-3 font-bold text-teal-300 bg-teal-900/50">${avgs.eff_dp.toFixed(1)}%</td>
+          <td class="py-3 px-3 border-l border-slate-800 text-center text-[10px] text-slate-400 font-sans">SUMMARY</td>
+        </tr>
+      `;
+    }
+
+    function plotCSVRowOnChart(idx) {
+      const r = csvCalculatedRows[idx];
+      if (!r) return;
+
+      points = [
+        { id: 1, enabled: true, name: `Primary In (#${r.rowNum})`, dbt: r.p_dbt_in, rh: r.p_rh_in, color: POINT_COLORS[0] },
+        { id: 2, enabled: true, name: `Primary Out (#${r.rowNum})`, dbt: r.p_dbt_out, rh: r.p_rh_out, color: POINT_COLORS[1] },
+        { id: 3, enabled: true, name: `Secondary In (#${r.rowNum})`, dbt: r.s_dbt_in, rh: r.s_rh_in, color: POINT_COLORS[2] },
+        { id: 4, enabled: true, name: `Secondary Out (#${r.rowNum})`, dbt: r.s_dbt_out, rh: r.s_rh_out, color: POINT_COLORS[3] }
+      ];
+
+      processes = [
+        { id: 1, start: 1, end: 2, color: '#0284c7' },
+        { id: 2, start: 3, end: 4, color: '#059669' }
+      ];
+
+      renderPointInputs();
+      renderProcessInputs();
+      updateSummaries();
+      switchTab('chart');
+    }
+
+    function exportResultsCSV() {
+      if (csvCalculatedRows.length === 0) return;
+
+      const headers = [
+        "Row","Time",
+        "Primary_Inlet_DBT_C","Primary_Inlet_RH_pct","Primary_Inlet_WBT_C","Primary_Inlet_Enthalpy_kJ_kg",
+        "Primary_Outlet_DBT_C","Primary_Outlet_RH_pct","Primary_Outlet_WBT_C","Primary_Outlet_Enthalpy_kJ_kg",
+        "Primary_Mass_Flow_kg_s","Primary_Heat_Duty_Q_kW",
+        "Secondary_Inlet_DBT_C","Secondary_Inlet_RH_pct","Secondary_Inlet_WBT_C","Secondary_Inlet_Enthalpy_kJ_kg",
+        "Secondary_Outlet_DBT_C","Secondary_Outlet_RH_pct","Secondary_Outlet_WBT_C","Secondary_Outlet_Enthalpy_kJ_kg",
+        "Secondary_Mass_Flow_kg_s","Secondary_Heat_Duty_Q_kW",
+        "Wet_Bulb_Effectiveness_pct","Dew_Point_Effectiveness_pct"
+      ];
+
+      const csvLines = [headers.join(",")];
+
+      let sums = {
+        p_dbt_in:0, p_rh_in:0, wbt_p_in:0, h_p_in:0, p_dbt_out:0, p_rh_out:0, wbt_p_out:0, h_p_out:0, p_m:0, Q_p:0,
+        s_dbt_in:0, s_rh_in:0, wbt_s_in:0, h_s_in:0, s_dbt_out:0, s_rh_out:0, wbt_s_out:0, h_s_out:0, s_m:0, Q_s:0,
+        eff_wb:0, eff_dp:0
+      };
+
+      csvCalculatedRows.forEach(r => {
+        Object.keys(sums).forEach(k => sums[k] += r[k]);
+
+        csvLines.push([
+          r.rowNum, `"${r.time}"`,
+          r.p_dbt_in.toFixed(2), r.p_rh_in.toFixed(2), r.wbt_p_in.toFixed(2), r.h_p_in.toFixed(2),
+          r.p_dbt_out.toFixed(2), r.p_rh_out.toFixed(2), r.wbt_p_out.toFixed(2), r.h_p_out.toFixed(2),
+          r.p_m.toFixed(3), r.Q_p.toFixed(3),
+          r.s_dbt_in.toFixed(2), r.s_rh_in.toFixed(2), r.wbt_s_in.toFixed(2), r.h_s_in.toFixed(2),
+          r.s_dbt_out.toFixed(2), r.s_rh_out.toFixed(2), r.wbt_s_out.toFixed(2), r.h_s_out.toFixed(2),
+          r.s_m.toFixed(3), r.Q_s.toFixed(3),
+          r.eff_wb.toFixed(2), r.eff_dp.toFixed(2)
+        ].join(","));
+      });
+
+      const N = csvCalculatedRows.length;
+      csvLines.push([
+        "AVERAGE","SUMMARY",
+        (sums.p_dbt_in/N).toFixed(2), (sums.p_rh_in/N).toFixed(2), (sums.wbt_p_in/N).toFixed(2), (sums.h_p_in/N).toFixed(2),
+        (sums.p_dbt_out/N).toFixed(2), (sums.p_rh_out/N).toFixed(2), (sums.wbt_p_out/N).toFixed(2), (sums.h_p_out/N).toFixed(2),
+        (sums.p_m/N).toFixed(3), (sums.Q_p/N).toFixed(3),
+        (sums.s_dbt_in/N).toFixed(2), (sums.s_rh_in/N).toFixed(2), (sums.wbt_s_in/N).toFixed(2), (sums.h_s_in/N).toFixed(2),
+        (sums.s_dbt_out/N).toFixed(2), (sums.s_rh_out/N).toFixed(2), (sums.wbt_s_out/N).toFixed(2), (sums.h_s_out/N).toFixed(2),
+        (sums.s_m/N).toFixed(3), (sums.Q_s/N).toFixed(3),
+        (sums.eff_wb/N).toFixed(2), (sums.eff_dp/N).toFixed(2)
+      ].join(","));
+
+      const blob = new Blob([csvLines.join("\n")], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'calculated_exchanger_results.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+
+    // ==========================================
+    // INTERACTIVE MULTI-SERIES GRAPH BUILDER
+    // ==========================================
+    const SERIES_META = {
+      eff_wb: { label: 'ε_wb (%)', color: '#38bdf8' },
+      eff_dp: { label: 'ε_dp (%)', color: '#2dd4bf' },
+      Q_p: { label: 'Q_p (kW)', color: '#c084fc' },
+      Q_s: { label: 'Q_s (kW)', color: '#f472b6' },
+      p_dbt_in: { label: 'Pri Inlet T (°C)', color: '#fb7185' },
+      p_dbt_out: { label: 'Pri Outlet T (°C)', color: '#fbbf24' },
+      s_dbt_in: { label: 'Sec Inlet T (°C)', color: '#34d399' },
+      s_dbt_out: { label: 'Sec Outlet T (°C)', color: '#818cf8' },
+      p_rh_in: { label: 'Pri Inlet RH (%)', color: '#22d3ee' },
+      p_rh_out: { label: 'Pri Outlet RH (%)', color: '#a3e635' },
+      s_rh_in: { label: 'Sec Inlet RH (%)', color: '#fb923c' },
+      s_rh_out: { label: 'Sec Outlet RH (%)', color: '#e879f9' }
+    };
+
+    function applyGraphPreset(preset) {
+      const checkboxes = document.querySelectorAll('#graph-y-checkboxes input[type=checkbox]');
+      checkboxes.forEach(cb => cb.checked = false);
+
+      if (preset === 'eff') {
+        ['eff_wb', 'eff_dp'].forEach(val => {
+          const cb = Array.from(checkboxes).find(c => c.value === val);
+          if (cb) cb.checked = true;
+        });
+      } else if (preset === 'duties') {
+        ['Q_p', 'Q_s'].forEach(val => {
+          const cb = Array.from(checkboxes).find(c => c.value === val);
+          if (cb) cb.checked = true;
+        });
+      } else if (preset === 'temps') {
+        ['p_dbt_in', 'p_dbt_out', 's_dbt_in', 's_dbt_out'].forEach(val => {
+          const cb = Array.from(checkboxes).find(c => c.value === val);
+          if (cb) cb.checked = true;
+        });
+      } else if (preset === 'h') {
+        ['Q_p', 'Q_s'].forEach(val => {
+          const cb = Array.from(checkboxes).find(c => c.value === val);
+          if (cb) cb.checked = true;
+        });
+      }
+
+      document.getElementById('graph-x-select').value = 'time';
+      renderCustomGraph();
+    }
+
+    function renderCustomGraph() {
+      const canvasG = document.getElementById('customGraphCanvas');
+      if (!canvasG) return;
+      const ctxG = canvasG.getContext('2d');
+
+      const rect = canvasG.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const W = Math.max(300, Math.floor(rect.width));
+      const H = Math.max(200, Math.floor(rect.height));
+      canvasG.width = W * dpr;
+      canvasG.height = H * dpr;
+      ctxG.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      ctxG.fillStyle = '#020617';
+      ctxG.fillRect(0, 0, W, H);
+
+      if (csvCalculatedRows.length === 0) {
+        ctxG.fillStyle = '#64748b';
+        ctxG.font = '13px Inter';
+        ctxG.textAlign = 'center';
+        ctxG.fillText('No CSV Data Loaded. Upload a file or click Reload Demo Data.', W / 2, H / 2);
+        return;
+      }
+
+      const selectedY = Array.from(document.querySelectorAll('#graph-y-checkboxes input[type=checkbox]:checked')).map(c => c.value);
+      if (selectedY.length === 0) {
+        ctxG.fillStyle = '#64748b';
+        ctxG.font = '13px Inter';
+        ctxG.textAlign = 'center';
+        ctxG.fillText('Please select at least one Y-Axis series checkbox above.', W / 2, H / 2);
+        return;
+      }
+
+      const gMargin = { top: 35, right: 35, bottom: 45, left: 55 };
+      const gPlotW = W - gMargin.left - gMargin.right;
+      const gPlotH = H - gMargin.top - gMargin.bottom;
+
+      let allYVals = [];
+      selectedY.forEach(key => {
+        csvCalculatedRows.forEach(r => allYVals.push(r[key]));
+      });
+
+      let minY = Math.min(...allYVals);
+      let maxY = Math.max(...allYVals);
+      if (minY === maxY) { minY -= 1; maxY += 1; }
+      const yPad = (maxY - minY) * 0.1;
+      minY = Math.max(0, minY - yPad);
+      maxY = maxY + yPad;
+
+      // Y Axis Ticks
+      ctxG.strokeStyle = '#1e293b';
+      ctxG.lineWidth = 1;
+      ctxG.fillStyle = '#94a3b8';
+      ctxG.font = '10px JetBrains Mono';
+      ctxG.textAlign = 'right';
+
+      const yTicks = 5;
+      for (let i = 0; i <= yTicks; i++) {
+        const val = minY + (i / yTicks) * (maxY - minY);
+        const y = gMargin.top + gPlotH - (i / yTicks) * gPlotH;
+
+        ctxG.beginPath();
+        ctxG.moveTo(gMargin.left, y);
+        ctxG.lineTo(gMargin.left + gPlotW, y);
+        ctxG.stroke();
+
+        ctxG.fillText(val.toFixed(1), gMargin.left - 8, y + 3);
+      }
+
+      // X Axis Ticks
+      ctxG.textAlign = 'center';
+      const N = csvCalculatedRows.length;
+      csvCalculatedRows.forEach((r, idx) => {
+        const x = gMargin.left + (idx / Math.max(1, N - 1)) * gPlotW;
+        ctxG.beginPath();
+        ctxG.moveTo(x, gMargin.top + gPlotH);
+        ctxG.lineTo(x, gMargin.top + gPlotH + 4);
+        ctxG.stroke();
+
+        ctxG.fillText(r.time, x, gMargin.top + gPlotH + 18);
+      });
+
+      // Plot Series Lines
+      selectedY.forEach(key => {
+        const meta = SERIES_META[key] || { label: key, color: '#38bdf8' };
+        ctxG.strokeStyle = meta.color;
+        ctxG.lineWidth = 2.5;
+        ctxG.beginPath();
+
+        csvCalculatedRows.forEach((r, idx) => {
+          const val = r[key];
+          const x = gMargin.left + (idx / Math.max(1, N - 1)) * gPlotW;
+          const y = gMargin.top + gPlotH - ((val - minY) / (maxY - minY)) * gPlotH;
+
+          if (idx === 0) ctxG.moveTo(x, y);
+          else ctxG.lineTo(x, y);
+        });
+        ctxG.stroke();
+
+        // Draw Nodes
+        csvCalculatedRows.forEach((r, idx) => {
+          const val = r[key];
+          const x = gMargin.left + (idx / Math.max(1, N - 1)) * gPlotW;
+          const y = gMargin.top + gPlotH - ((val - minY) / (maxY - minY)) * gPlotH;
+
+          ctxG.fillStyle = meta.color;
+          ctxG.beginPath();
+          ctxG.arc(x, y, 4, 0, Math.PI * 2);
+          ctxG.fill();
+        });
+      });
+
+      // Legend Overlay
+      let legX = gMargin.left + 10;
+      selectedY.forEach(key => {
+        const meta = SERIES_META[key] || { label: key, color: '#38bdf8' };
+        ctxG.fillStyle = meta.color;
+        ctxG.fillRect(legX, 10, 10, 10);
+
+        ctxG.fillStyle = '#e2e8f0';
+        ctxG.font = '11px Inter';
+        ctxG.textAlign = 'left';
+        ctxG.fillText(meta.label, legX + 14, 19);
+
+        legX += ctxG.measureText(meta.label).width + 30;
+      });
+    }
+
+    function exportCustomGraphPNG() {
+      const canvasG = document.getElementById('customGraphCanvas');
+      if (!canvasG) return;
+      const imageURI = canvasG.toDataURL('image/png');
+      const link = document.createElement('a');
+      link.download = 'custom-time-series-graph.png';
+      link.href = imageURI;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    // ==========================================
+    // CLIENT-SIDE PDF GENERATOR WITH FAILSAFE FALLBACK
+    // ==========================================
+    function generatePDFReport() {
+      if (csvCalculatedRows.length === 0) {
+        alert('Please upload or load data before generating a PDF report.');
+        return;
+      }
+
+      // Helper to sanitize strings for jsPDF standard WinAnsi fonts
+      const pdfSafe = (str) => String(str)
+        .replace(/ε/g, 'eff_')
+        .replace(/→/g, '->')
+        .replace(/Δ/g, 'd')
+        .replace(/°/g, ' deg ')
+        .replace(/×/g, 'x')
+        .replace(/[^\x20-\x7E]/g, ' ');
+
+      // Try jsPDF UMD
+      if (window.jspdf && window.jspdf.jsPDF) {
+        try {
+          const { jsPDF } = window.jspdf;
+          const doc = new jsPDF('p', 'mm', 'a4');
+          const pageWidth = doc.internal.pageSize.getWidth();
+          const contentWidth = pageWidth - 28;
+
+          // Header Banner
+          doc.setFillColor(15, 23, 42);
+          doc.rect(0, 0, pageWidth, 26, 'F');
+
+          doc.setTextColor(255, 255, 255);
+          doc.setFontSize(14);
+          doc.setFont('helvetica', 'bold');
+          doc.text('Psychrometric & Exchanger Performance Report', 14, 14);
+
+          doc.setFontSize(8.5);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(148, 163, 184);
+          doc.text(
+            pdfSafe(`Generated: ${new Date().toLocaleString()}  |  Rows: ${csvCalculatedRows.length}  |  ATM: 101.325 kPa`),
+            14,
+            21
+          );
+
+          // Compute averages
+          let sums = {
+            p_dbt_in:0, p_rh_in:0, wbt_p_in:0, h_p_in:0, p_dbt_out:0, p_rh_out:0, wbt_p_out:0, h_p_out:0, p_m:0, Q_p:0,
+            s_dbt_in:0, s_rh_in:0, wbt_s_in:0, h_s_in:0, s_dbt_out:0, s_rh_out:0, wbt_s_out:0, h_s_out:0, s_m:0, Q_s:0,
+            eff_wb:0, eff_dp:0
+          };
+          csvCalculatedRows.forEach(r => Object.keys(sums).forEach(k => sums[k] += r[k]));
+          const N = csvCalculatedRows.length;
+          const avgs = {};
+          Object.keys(sums).forEach(k => avgs[k] = sums[k] / N);
+          const thermalRatio = avgs.Q_p > 0 ? ((avgs.Q_s / avgs.Q_p) * 100).toFixed(1) : '100.0';
+          const avgDhPri = Math.abs(avgs.h_p_in - avgs.h_p_out);
+
+          // Section 1: Executive KPI Summary Box (2-column grid with non-overlapping coordinates)
+          let curY = 34;
+          doc.setTextColor(15, 23, 42);
+          doc.setFontSize(11);
+          doc.setFont('helvetica', 'bold');
+          doc.text('1. Executive Average Performance Summary', 14, curY);
+
+          curY += 4;
+          const boxHeight = 56;
+          doc.setFillColor(248, 250, 252);
+          doc.setDrawColor(203, 213, 225);
+          doc.setLineWidth(0.4);
+          doc.rect(14, curY, contentWidth, boxHeight, 'FD');
+
+          // Vertical divider down the middle of the summary card
+          const midX = 14 + contentWidth / 2;
+          doc.setDrawColor(226, 232, 240);
+          doc.line(midX, curY + 3, midX, curY + boxHeight - 3);
+
+          const leftX = 18;
+          const rightX = midX + 5;
+          const row1Y = curY + 8;
+          const row2Y = curY + 17;
+          const row3Y = curY + 26;
+          const row4Y = curY + 35;
+          const row5Y = curY + 44;
+
+          doc.setFontSize(9.5);
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(3, 105, 161);
+          doc.text(pdfSafe(`Avg Wet Bulb Eff. (eff_wb): ${avgs.eff_wb.toFixed(1)}%`), leftX, row1Y);
+
+          doc.setTextColor(15, 118, 110);
+          doc.text(pdfSafe(`Avg Dew Point Eff. (eff_dp): ${avgs.eff_dp.toFixed(1)}%`), rightX, row1Y);
+
+          doc.setFontSize(8.5);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(51, 65, 85);
+          doc.text(pdfSafe(`Primary Heat Duty (Q_p): ${avgs.Q_p.toFixed(2)} kW  |  Flow: ${avgs.p_m.toFixed(2)} kg/s`), leftX, row2Y);
+          doc.text(pdfSafe(`Secondary Heat Duty (Q_s): ${avgs.Q_s.toFixed(2)} kW  |  Flow: ${avgs.s_m.toFixed(2)} kg/s`), rightX, row2Y);
+
+          doc.text(
+            pdfSafe(`Primary Temp: ${avgs.p_dbt_in.toFixed(1)}C -> ${avgs.p_dbt_out.toFixed(1)}C (dT = ${(avgs.p_dbt_out - avgs.p_dbt_in).toFixed(1)}C)`),
+            leftX,
+            row3Y
+          );
+          doc.text(
+            pdfSafe(`Primary RH: ${avgs.p_rh_in.toFixed(1)}% -> ${avgs.p_rh_out.toFixed(1)}%`),
+            rightX,
+            row3Y
+          );
+
+          doc.text(
+            pdfSafe(`Secondary Temp: ${avgs.s_dbt_in.toFixed(1)}C -> ${avgs.s_dbt_out.toFixed(1)}C (dT = ${(avgs.s_dbt_out - avgs.s_dbt_in).toFixed(1)}C)`),
+            leftX,
+            row4Y
+          );
+          doc.text(
+            pdfSafe(`Secondary RH: ${avgs.s_rh_in.toFixed(1)}% -> ${avgs.s_rh_out.toFixed(1)}%`),
+            rightX,
+            row4Y
+          );
+
+          doc.text(
+            pdfSafe(`Avg Primary Enthalpy Drop: ${avgDhPri.toFixed(1)} kJ/kg`),
+            leftX,
+            row5Y
+          );
+          doc.text(
+            pdfSafe(`Thermal Balance (Q_s/Q_p): ${thermalRatio}%`),
+            rightX,
+            row5Y
+          );
+
+          // Section 2: Custom Graph Image
+          curY += boxHeight + 8;
+          doc.setFontSize(11);
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(15, 23, 42);
+          doc.text('2. Custom Performance Trend Plot', 14, curY);
+
+          curY += 4;
+          const canvasG = document.getElementById('customGraphCanvas');
+          if (canvasG) {
+            const imgData = canvasG.toDataURL('image/png', 1.0);
+            const graphHeight = 68;
+            doc.setDrawColor(203, 213, 225);
+            doc.rect(14, curY, contentWidth, graphHeight, 'S');
+            doc.addImage(imgData, 'PNG', 14.5, curY + 0.5, contentWidth - 1, graphHeight - 1);
+            curY += graphHeight + 8;
+          }
+
+          // Section 3: Batch Table (cleanly spaced columns within 182mm width)
+          doc.setFontSize(11);
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(15, 23, 42);
+          doc.text('3. Detailed Log Data & Calculations', 14, curY);
+
+          curY += 4;
+          const cols = [
+            { label: 'Time', x: 15, w: 18 },
+            { label: 'Pri In', x: 33, w: 28 },
+            { label: 'Pri Out', x: 61, w: 28 },
+            { label: 'Sec In', x: 89, w: 28 },
+            { label: 'Sec Out', x: 117, w: 28 },
+            { label: 'Q_p (kW)', x: 145, w: 16 },
+            { label: 'eff_wb', x: 161, w: 17 },
+            { label: 'eff_dp', x: 178, w: 18 }
+          ];
+
+          const drawTableHeader = (yPos) => {
+            doc.setFontSize(7.5);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(15, 23, 42);
+            doc.setFillColor(226, 232, 240);
+            doc.rect(14, yPos, contentWidth, 6.5, 'F');
+            cols.forEach(c => doc.text(pdfSafe(c.label), c.x, yPos + 4.3));
+            return yPos + 6.5;
+          };
+
+          curY = drawTableHeader(curY);
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(7.5);
+
+          csvCalculatedRows.forEach((r, idx) => {
+            if (curY > 272) {
+              doc.addPage();
+              curY = 16;
+              curY = drawTableHeader(curY);
+              doc.setFont('helvetica', 'normal');
+              doc.setFontSize(7.5);
+            }
+            if (idx % 2 === 1) {
+              doc.setFillColor(248, 250, 252);
+              doc.rect(14, curY, contentWidth, 6, 'F');
+            }
+            doc.setTextColor(30, 41, 59);
+            const rowCells = [
+              pdfSafe(r.time),
+              pdfSafe(`${r.p_dbt_in.toFixed(1)}C / ${r.p_rh_in.toFixed(0)}%`),
+              pdfSafe(`${r.p_dbt_out.toFixed(1)}C / ${r.p_rh_out.toFixed(0)}%`),
+              pdfSafe(`${r.s_dbt_in.toFixed(1)}C / ${r.s_rh_in.toFixed(0)}%`),
+              pdfSafe(`${r.s_dbt_out.toFixed(1)}C / ${r.s_rh_out.toFixed(0)}%`),
+              pdfSafe(r.Q_p.toFixed(2)),
+              pdfSafe(`${r.eff_wb.toFixed(1)}%`),
+              pdfSafe(`${r.eff_dp.toFixed(1)}%`)
+            ];
+            rowCells.forEach((txt, cIdx) => doc.text(txt, cols[cIdx].x, curY + 4.1));
+            curY += 6;
+          });
+
+          // Average summary row at bottom of PDF table
+          if (curY > 270) {
+            doc.addPage();
+            curY = 16;
+          }
+          doc.setFillColor(219, 234, 254);
+          doc.rect(14, curY, contentWidth, 6.5, 'F');
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(15, 23, 42);
+          const avgCells = [
+            'AVG',
+            pdfSafe(`${avgs.p_dbt_in.toFixed(1)}C / ${avgs.p_rh_in.toFixed(0)}%`),
+            pdfSafe(`${avgs.p_dbt_out.toFixed(1)}C / ${avgs.p_rh_out.toFixed(0)}%`),
+            pdfSafe(`${avgs.s_dbt_in.toFixed(1)}C / ${avgs.s_rh_in.toFixed(0)}%`),
+            pdfSafe(`${avgs.s_dbt_out.toFixed(1)}C / ${avgs.s_rh_out.toFixed(0)}%`),
+            pdfSafe(avgs.Q_p.toFixed(2)),
+            pdfSafe(`${avgs.eff_wb.toFixed(1)}%`),
+            pdfSafe(`${avgs.eff_dp.toFixed(1)}%`)
+          ];
+          avgCells.forEach((txt, cIdx) => doc.text(txt, cols[cIdx].x, curY + 4.3));
+
+          doc.save('HVAC_Exchanger_Performance_Report.pdf');
+          return;
+        } catch (err) {
+          console.warn('jsPDF failed, resorting to window print fallback:', err);
+        }
+      }
+
+      // Print-To-PDF Failsafe Fallback
+      window.print();
+    }
+
+    // Export Psychrometric Chart PNG
+    function exportChartPNG() {
+      drawChart();
+      const imageURI = canvas.toDataURL('image/png');
+      const link = document.createElement('a');
+      link.download = 'psychrometric-chart-process.png';
+      link.href = imageURI;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  </script>
+</body>
+</html>
